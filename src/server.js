@@ -3,6 +3,7 @@ const express = require('express');
 const compression = require('compression');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
+const path = require('path');  // To serve static files
 const connect = require('./configs/db');
 const PORT = 8080;
 
@@ -52,3 +53,9 @@ app.listen(PORT, async () => {
         console.log(message);
     }
 })
+
+app.use(express.static(path.join(__dirname, 'dist')));
+
+app.get("*", (req, res) => {
+    res.sendFile(path.join(__dirname, "dist", "index.html"));
+});
