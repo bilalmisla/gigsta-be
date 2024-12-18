@@ -1,9 +1,9 @@
 require('dotenv').config();
 const express = require('express');
+const path = require('path');
 const compression = require('compression');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
-const path = require('path');  // To serve static files
 const connect = require('./configs/db');
 const PORT = 8080;
 
@@ -37,6 +37,12 @@ app.get('/', (request, response) => {
     response.send('Hello, Topper!');
 });
 
+app.use(express.static(path.join(__dirname, 'build')));
+
+app.get('*', (req, res) => {
+    res.sendFile(path.resolve(__dirname, 'build', 'index.html'));
+});
+
 app.get('/ip', (request, response) => {
     const list = request.headers['x-forwarded-for'] || request.socket.remoteAddress;
     const ips = list.split(',');
@@ -53,9 +59,3 @@ app.listen(PORT, async () => {
         console.log(message);
     }
 })
-
-app.use(express.static(path.join(__dirname, 'dist')));
-
-app.get("*", (req, res) => {
-    res.sendFile(path.join(__dirname, "dist", "index.html"));
-});
