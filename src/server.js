@@ -1,6 +1,5 @@
 require('dotenv').config();
 const express = require('express');
-const path = require('path');
 const compression = require('compression');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
@@ -35,12 +34,6 @@ app.use('/api/reviews', reviewRoute);
 // Routes
 app.get('/', (request, response) => {
     response.send('Hello, Topper!');
-});
-
-app.use(express.static(path.join(__dirname, 'dist')));
-
-app.get("*", (req, res) => {
-    res.sendFile(path.join(__dirname, "dist", "index.html"));
 });
 
 app.get('/ip', (request, response) => {
