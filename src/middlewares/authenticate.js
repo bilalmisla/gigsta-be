@@ -2,16 +2,27 @@ const jwt = require('jsonwebtoken');
 const { CustomException } = require("../utils");
 
 const authenticate = (request, response, next) => {
-    const { accessToken } = request.cookies;
+    // Check Authorization header first
+    const authHeader = request.headers.authorization;
+    const tokenFromHeader = authHeader && authHeader.startsWith('Bearer ')
+        ? authHeader.split(' ')[1]
+        : null;
+
+    // Fallback to cookie
+    const tokenFromCookie = request.cookies?.accessToken;
+
+    // Use either token
+    const token = tokenFromHeader || tokenFromCookie;
 
     try {
-        if (!accessToken) {
+        if (!token) {
             throw CustomException('Access denied!', 401);
         }
 
-        const verification = jwt.verify(accessToken, process.env.JWT_SECRET);
+        const verification = jwt.verify(token, process.env.JWT_SECRET);
         if(verification) {
             request.userID = verification._id;
+            request.isSeller = verification.isSeller;
             return next();
         }
 
