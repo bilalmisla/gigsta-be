@@ -60,12 +60,20 @@ const authLogin = async (request, response) => {
                 isSeller: user.isSeller
             }, JWT_SECRET, { expiresIn: '7 days' });
 
-            return response.status(202).send({
+            const cookieConfig =  {
+                httpOnly: true,
+                sameSite: NODE_ENV === 'production' ? 'none' : 'strict',
+                secure: NODE_ENV === 'production',
+                maxAge: 60 * 60 * 24 * 7 * 1000, // 7 days
+                path: '/'
+            }
+
+            return response.cookie('accessToken', token, cookieConfig)
+            .status(202).send({
                 error: false,
                 message: 'Success!',
-                user: data,
-                token
-            });
+                user: data
+            })
         }
         
         throw CustomException('Check username or password!', 404);
@@ -74,7 +82,7 @@ const authLogin = async (request, response) => {
         return response.status(status).send({
             error: true,
             message
-        });
+        })
     }
 }
 
