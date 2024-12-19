@@ -18,9 +18,20 @@ app.use(express.json());
 app.use(cookieParser());
 app.use(compression());
 app.use(cors({
-    origin: ['http://localhost:5173', 'http://localhost:4173', 'https://gigsta.ai', 'https://gigstafrontend.netlify.app'],
-    credentials: true
+    origin: process.env.NODE_ENV === 'development'
+        ? ['https://gigsta.ai', 'https://gigstafrontend.netlify.app', 'https://gigsta-backend-edghckg6f7eab3hq.centralus-01.azurewebsites.net']
+        : ['http://localhost:5173', 'http://localhost:4173', 'https://gigsta-backend-edghckg6f7eab3hq.centralus-01.azurewebsites.net'],
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Cookie'],
+    exposedHeaders: ['Set-Cookie'],
 }));
+
+// Add this after your CORS middleware
+app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Credentials', 'true');
+    next();
+});
 
 // Other Routes
 app.use('/api/auth', authRoute);
