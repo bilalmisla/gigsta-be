@@ -100,7 +100,8 @@ const authLogout = async (request, response) => {
 const authStatus = async (request, response) => {
     try {
         const user = await User.findOne({ _id: request.userID }).select('-password');
-
+        console.log(user, "user auth status");
+        
         if(!user) {
             throw CustomException('User not found!', 404);
         }
@@ -111,10 +112,11 @@ const authStatus = async (request, response) => {
             user
         })
     }
-    catch({message, status = 500}) {
-        return response.status(status).send({
+    catch(error) {
+        console.log(error);        
+        return response.status(error.status).send({
             error: true,
-            message
+            message: error
         })
     }
 }
