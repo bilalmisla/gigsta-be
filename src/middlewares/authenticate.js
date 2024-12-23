@@ -23,10 +23,10 @@ const authenticate = (request, response, next) => {
     catch(error) {
         console.log("error from middleware", error);
         
-        // return response.status(status).send({
-        //     error: true,
-        //     message
-        // })
+        return response.status(error.status).send({
+            error: true,
+            message: error
+        })
     }
 }
 
