@@ -19,7 +19,10 @@ app.get('/me', authenticate, authStatus);
 
 // Middleware to verify token
 const authenticateToken = async (req, res, next) => {
+    console.log(req, "Req");
+    
     const token = req.headers['Authorization']?.split(' ')[1];
+
     if (!token) return res.status(401).json({ error: 'Token is required' });
 
     try {
