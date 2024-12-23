@@ -113,10 +113,10 @@ const authStatus = async (request, response) => {
         })
     }
     catch(error) {
-        console.log(error);        
+        console.log(error, "podsaidposa");
         return response.status(error.status).send({
             error: true,
-            message: error
+            message: error.message
         })
     }
 }

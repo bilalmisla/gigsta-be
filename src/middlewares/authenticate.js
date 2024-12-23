@@ -25,7 +25,7 @@ const authenticate = (request, response, next) => {
         
         return response.status(error.status).send({
             error: true,
-            message: error
+            message: error.message
         })
     }
 }
