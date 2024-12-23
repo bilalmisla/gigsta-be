@@ -72,7 +72,7 @@ const authLogin = async (request, response) => {
             .status(202).send({
                 error: false,
                 message: 'Success!',
-                user: data
+                user: {...data, token}
             })
         }
         
