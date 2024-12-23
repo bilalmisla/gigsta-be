@@ -7,7 +7,7 @@ const authenticate = (request, response, next) => {
     
     try {
         if (!accessToken) {
-            throw CustomException('Access denied!', 401);
+            throw CustomException(request, 401);
         }
 
         const verification = jwt.verify(accessToken, process.env.JWT_SECRET);
