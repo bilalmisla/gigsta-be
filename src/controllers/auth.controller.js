@@ -60,19 +60,19 @@ const authLogin = async (request, response) => {
                 isSeller: user.isSeller
             }, JWT_SECRET, { expiresIn: '7 days' });
 
-            const cookieConfig =  {
+            const cookieConfig = {
                 httpOnly: true,
-                sameSite: NODE_ENV === 'production' ? 'none' : 'strict',
-                secure: NODE_ENV === 'production',
+                sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // Important for cross-site cookies
+                secure: process.env.NODE_ENV === 'production', // Must be true in production (requires HTTPS)
                 maxAge: 60 * 60 * 24 * 7 * 1000, // 7 days
                 path: '/'
-            }
+            };
 
             return response.cookie('accessToken', token, cookieConfig)
             .status(202).send({
                 error: false,
                 message: 'Success!',
-                user: {...data, token}
+                user: { ...data, token }
             })
         }
         
@@ -101,7 +101,7 @@ const authStatus = async (request, response) => {
     try {
         const user = await User.findOne({ _id: request.userID }).select('-password');
         console.log(user, "user auth status");
-        
+
         if(!user) {
             throw CustomException('User not found!', 404);
         }
@@ -112,7 +112,7 @@ const authStatus = async (request, response) => {
             user
         })
     }
-    catch(error) {
+    catch (error) {
         console.log(error, "podsaidposa");
         return response.status(error.status).send({
             error: true,
