@@ -2,11 +2,15 @@ const jwt = require('jsonwebtoken');
 const { CustomException } = require("../utils");
 
 const authenticate = (request, response, next) => {
-    const { accessToken } = request.cookies;
+    const authHeader = request.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        throw CustomException('Token missing or invalid!', 401);
+    }
 
+    const token = authHeader.split(' ')[1];
     try {
-        if (!accessToken) {
-            throw CustomException('Access denied!', 401);
+        if (!token) {
+            throw CustomException('Token missing or invalid!', 401);
         }
 
         const verification = jwt.verify(accessToken, process.env.JWT_SECRET);
