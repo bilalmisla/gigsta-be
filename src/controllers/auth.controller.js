@@ -66,8 +66,8 @@ const authLogin = async (request, response) => {
                 secure: NODE_ENV === 'development' ? false : true,
                 maxAge: 60 * 60 * 24 * 7 * 1000, // 7 days
                 path: '/',
-                domain: process.env.NODE_ENV === 'development'
-                    ? 'localhost' // Set to frontend domain
+                domain: NODE_ENV === 'development'
+                    ? 'localhost'
                     : 'gigsta-backend-edghckg6f7eab3hq.centralus-01.azurewebsites.net',
             };
 
