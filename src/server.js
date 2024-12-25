@@ -18,11 +18,8 @@ app.use(express.json());
 app.use(cookieParser());
 app.use(compression());
 app.use(cors({
-    origin: ['http://localhost:5173', 'http://localhost:4173', 'https://gigsta.ai', 'https://gigstafrontend.netlify.app'],
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // HTTP methods allowed
-    allowedHeaders: ['Content-Type', 'Authorization', 'Cookie'], // Allowed headers
-    exposedHeaders: ['set-cookie', 'Set-Cookie'], // Expose cookie headers
+    origin: ['http://localhost:5173', 'https://gigsta.ai', 'https://gigstafrontend.netlify.app'],
+    credentials: true
 }));
 
 // Other Routes
