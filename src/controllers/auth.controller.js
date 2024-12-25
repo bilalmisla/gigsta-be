@@ -62,13 +62,10 @@ const authLogin = async (request, response) => {
 
             const cookieConfig = {
                 httpOnly: true,
-                sameSite: 'None',  // Explicitly set to 'None' for cross-site cookies
+                sameSite: 'none',  // Explicitly set to 'None' for cross-site cookies
                 secure: process.env.NODE_ENV === 'production',
                 maxAge: 60 * 60 * 24 * 7 * 1000, // 7 days
-                path: '/',
-                domain: process.env.NODE_ENV === 'production'
-                    ? '.gigsta.ai' // Use the live domain for production
-                    : 'localhost', // Use localhost for local development
+                path: '/'
             };
 
             return response.cookie('accessToken', token, cookieConfig)
