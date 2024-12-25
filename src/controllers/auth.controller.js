@@ -68,7 +68,7 @@ const authLogin = async (request, response) => {
                 path: '/',
                 domain: NODE_ENV === 'development'
                     ? 'localhost'
-                    : 'gigsta-backend-edghckg6f7eab3hq.centralus-01.azurewebsites.net',
+                    : '.gigsta-backend-edghckg6f7eab3hq.centralus-01.azurewebsites.net',
             };
 
             return response.cookie('accessToken', token, cookieConfig)
