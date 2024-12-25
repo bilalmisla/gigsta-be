@@ -65,10 +65,7 @@ const authLogin = async (request, response) => {
                 sameSite: NODE_ENV === 'development' ? 'lax' : 'none',
                 secure: NODE_ENV === 'development' ? false : true,
                 maxAge: 60 * 60 * 24 * 7 * 1000, // 7 days
-                path: '/',
-                domain: NODE_ENV === 'development'
-                    ? 'localhost'
-                    : '.gigsta.ai',
+                path: '/'
             };
 
             return response.cookie('accessToken', token, cookieConfig)
