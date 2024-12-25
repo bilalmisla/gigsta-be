@@ -3,7 +3,7 @@ const { CustomException } = require('../utils');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const satelize = require('satelize');
-const { JWT_SECRET, NODE_ENV } = process.env;
+// const { JWT_SECRET, NODE_ENV } = process.env;
 const saltRounds = 10;
 
 const authRegister = async (request, response) => {
@@ -58,12 +58,12 @@ const authLogin = async (request, response) => {
             const token = jwt.sign({
                 _id: user._id,
                 isSeller: user.isSeller
-            }, JWT_SECRET, { expiresIn: '7 days' });
+            }, process.env.JWT_SECRET, { expiresIn: '7 days' });
 
             const cookieConfig = {
                 httpOnly: true,
-                sameSite: NODE_ENV === 'development' ? 'lax' : 'none',
-                secure: NODE_ENV === 'development' ? false : true,
+                sameSite: process.env.NODE_ENV === 'development' ? 'lax' : 'none',
+                secure: process.env.NODE_ENV === 'development' ? false : true,
                 maxAge: 60 * 60 * 24 * 7 * 1000, // 7 days
                 path: '/'
             };
