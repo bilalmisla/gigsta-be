@@ -65,7 +65,10 @@ const authLogin = async (request, response) => {
                 sameSite: NODE_ENV === 'development' ? 'lax' : 'none',
                 secure: NODE_ENV === 'development' ? false : true,
                 maxAge: 60 * 60 * 24 * 7 * 1000, // 7 days
-                path: '/'
+                path: '/',
+                domain: process.env.NODE_ENV === 'development'
+                    ? 'localhost' // Set to frontend domain
+                    : 'gigsta-backend-edghckg6f7eab3hq.centralus-01.azurewebsites.net',
             };
 
             return response.cookie('accessToken', token, cookieConfig)
