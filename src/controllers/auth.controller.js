@@ -62,8 +62,8 @@ const authLogin = async (request, response) => {
 
             const cookieConfig = {
                 httpOnly: true,
-                sameSite: 'none',  // Explicitly set to 'None' for cross-site cookies
-                secure: process.env.NODE_ENV === 'production',
+                sameSite: process.env.NODE_ENV === 'development' ? 'lax' : 'none', // Important for cross-site cookies
+                secure: process.env.NODE_ENV === 'production', // Must be true in production (requires HTTPS)
                 maxAge: 60 * 60 * 24 * 7 * 1000, // 7 days
                 path: '/'
             };
@@ -72,7 +72,7 @@ const authLogin = async (request, response) => {
             .status(202).send({
                 error: false,
                 message: 'Success!',
-                user: { ...data, token }
+                user: data
             })
         }
         
@@ -113,7 +113,6 @@ const authStatus = async (request, response) => {
         })
     }
     catch (error) {
-        console.log(error, "podsaidposa");
         return response.status(error.status).send({
             error: true,
             message: error.message
