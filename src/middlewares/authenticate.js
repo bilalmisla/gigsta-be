@@ -10,10 +10,6 @@ const authenticate = (request, response, next) => {
 
     const token = authHeader.split(' ')[1];
     try {
-        if (!token) {
-            throw CustomException('Token missing or invalid!', 401);
-        }
-
         const verification = jwt.verify(token, process.env.JWT_SECRET);
         if(verification) {
             request.userID = verification._id;

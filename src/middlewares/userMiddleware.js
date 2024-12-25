@@ -3,8 +3,12 @@ const { CustomException } = require('../utils');
 const { authLogout } = require('../controllers/auth.controller');
 
 const userMiddleware = (request, response, next) => {
-    const token = request.cookies.accessToken;
-    
+    const authHeader = request.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        throw CustomException('Token missing or invalid!', 401);
+    }
+
+    const token = authHeader.split(' ')[1];
     try {
         if(!token) {
             throw CustomException('Unauthorized access!', 400);
