@@ -1,5 +1,5 @@
 const express = require('express');
-const { authLogin, authLogout, authRegister, authStatus } = require('../controllers/auth.controller');
+const { authLogin, authLogout, authRegister, authStatus, verifyEmail } = require('../controllers/auth.controller');
 const { authenticate } = require('../middlewares');
 const { User } = require('../models');
 
@@ -17,10 +17,11 @@ app.post('/logout', authLogout)
 // Check Auth status
 app.get('/me', authenticate, authStatus);
 
+// Route for email verification
+app.get('/verify-email', verifyEmail);
+
 // Middleware to verify token
 const authenticateToken = async (req, res, next) => {
-    console.log(req, "Req");
-    
     const token = req.headers['Authorization']?.split(' ')[1];
 
     if (!token) return res.status(401).json({ error: 'Token is required' });

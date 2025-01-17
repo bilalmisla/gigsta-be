@@ -2,7 +2,6 @@ const jwt = require('jsonwebtoken');
 const { CustomException } = require("../utils");
 
 const authenticate = (request, response, next) => {
-    console.log(request, "request");    
     const authHeader = request.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
         throw CustomException('Token missing or invalid!', 401);

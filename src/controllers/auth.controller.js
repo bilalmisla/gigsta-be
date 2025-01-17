@@ -1,16 +1,50 @@
 const { User } = require('../models');
 const { CustomException } = require('../utils');
 const jwt = require('jsonwebtoken');
+const nodemailer = require('nodemailer');
 const bcrypt = require('bcrypt');
-const satelize = require('satelize');
-// const { JWT_SECRET, NODE_ENV } = process.env;
 const saltRounds = 10;
+
+const transporter = nodemailer.createTransport({
+    service: 'Gmail', // Use your email provider here
+    auth: {
+        user: process.env.EMAIL_USER, // Your email address
+        pass: process.env.EMAIL_PASS  // Your email password or app-specific password
+    }
+});
+
+const sendVerificationEmail = async (email, username, token) => {
+    const verificationUrl = `${process.env.FRONTEND_URL}/verify-email?token=${token}`;
+    const mailOptions = {
+        from: process.env.EMAIL_USER, // Replace with your app name and email
+        to: email,
+        subject: 'Verify Your Gigsta Email Address',
+        html: `
+            <p>Hi ${username},</p>
+            <p>Thank you for signing up for <a href=${process.env.FRONTEND_URL} target="_blank">Gigsta.ai</a>! To complete the account creation process, please verify your email address by clicking the link below:</p>
+            <p>Verify My Email Address: <a href="${verificationUrl}" target="_blank">${verificationUrl}</a></p>
+            <p>This link will expire in 24 hours. If you did not sign up for a Gigsta.AI account, you can safely ignore this email.</p>
+            <p>If you have any questions or need assistance, feel free to contact us at <a href=mailto:bilal@madeinsouth.la>bilal@madeinsouth.la</a></p>
+            <p>Best regards, <br /> Gigsta Team</p>
+        `
+    };
+
+    await transporter.sendMail(mailOptions);
+};
 
 const authRegister = async (request, response) => {
     const { username, email, phone, password, image, isSeller, description } = request.body;
 
     try {
-        const hash = bcrypt.hashSync(password, saltRounds);
+        const hash = await bcrypt.hash(password, saltRounds);
+        const existingUser = await User.findOne({ email });
+        if (existingUser) {
+            return response.status(400).send({
+                error: true,
+                message: 'Email already exists!'
+            });
+        }
+
         const user = new User({
             username,
             email,
@@ -18,17 +52,24 @@ const authRegister = async (request, response) => {
             image,
             description,
             isSeller,
-            phone
+            phone,
+            isVerified: false // Add an isVerified field in your User model
         });
-        await user.save();
-        
+
+        const savedUser = await user.save();
+
+        // Generate a verification token
+        const token = jwt.sign({ userId: savedUser._id }, process.env.JWT_SECRET, { expiresIn: '1d' });
+
+        // Send verification email
+        await sendVerificationEmail(email, username, token);
+
         return response.status(201).send({
             error: false,
-            message: 'New user created!'
+            message: 'An email has been sent to your registered address. Please check your inbox and click the verification link to activate your account.'
         });
-    }
-    catch({message}) {
-        if(message.includes('E11000')) {
+    } catch (err) {
+        if (err.message.includes('E11000')) {
             return response.status(400).send({
                 error: true,
                 message: 'Choose a unique username!'
@@ -37,22 +78,145 @@ const authRegister = async (request, response) => {
 
         return response.status(500).send({
             error: true,
-            message: 'Something went wrong!'
+            message: err.message
         });
     }
-}
+};
+
+const verifyEmail = async (request, response) => {
+    const { token } = request.query;
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const user = await User.findById(decoded.userId);
+
+        if (!user) {
+            return response.status(400).send({
+                error: true,
+                message: 'Invalid token or user does not exist.'
+            });
+        }
+
+        if (user.isVerified) {
+            return response.status(409).send({
+                error: true,
+                message: 'User is already verified.'
+            });
+        }
+
+        user.isVerified = true;
+        await user.save();
+
+        return response.status(200).send({
+            error: false,
+            message: 'Your account has been successfully verified. You can now log in and start using our services.'
+        });
+    } catch (err) {
+        return response.status(400).send({
+            error: true,
+            message: 'Invalid or expired token.'
+        });
+    }
+};
+
+// const authRegister = async (request, response) => {
+//     const { username, email, phone, password, image, isSeller, description } = request.body;
+
+//     try {
+//         const hash = bcrypt.hashSync(password, saltRounds);
+//         const user = new User({
+//             username,
+//             email,
+//             password: hash,
+//             image,
+//             description,
+//             isSeller,
+//             phone
+//         });
+//         await user.save();
+        
+//         return response.status(201).send({
+//             error: false,
+//             message: 'New user created!'
+//         });
+//     }
+//     catch({message}) {
+//         if(message.includes('E11000')) {
+//             return response.status(400).send({
+//                 error: true,
+//                 message: 'Choose a unique username!'
+//             });
+//         }
+
+//         return response.status(500).send({
+//             error: true,
+//             message: 'Something went wrong!'
+//         });
+//     }
+// }
+
+// const authLogin = async (request, response) => {
+//     const { username, password } = request.body;
+
+//     try {
+//         const user = await User.findOne({ username });
+//         if(!user) {
+//             throw CustomException('Check username or password!', 404);
+//         }
+
+//         const match = bcrypt.compareSync(password, user.password);
+//         if(match) {
+//             const { password, ...data } = user._doc;
+
+//             const token = jwt.sign({
+//                 _id: user._id,
+//                 isSeller: user.isSeller
+//             }, process.env.JWT_SECRET, { expiresIn: '7 days' });
+
+//             const cookieConfig = {
+//                 httpOnly: true,
+//                 sameSite: process.env.NODE_ENV === 'development' ? 'lax' : 'none',
+//                 secure: process.env.NODE_ENV === 'development' ? false : true,
+//                 maxAge: 60 * 60 * 24 * 7 * 1000, // 7 days
+//                 path: '/'
+//             };
+
+//             return response.cookie('accessToken', token, cookieConfig)
+//             .status(202).send({
+//                 error: false,
+//                 message: 'Success!',
+//                 user: {...data, token: token}
+//             })
+//         }
+        
+//         throw CustomException('Check username or password!', 404);
+//     }
+//     catch({ message, status = 500 }) {
+//         return response.status(status).send({
+//             error: true,
+//             message
+//         })
+//     }
+// }
 
 const authLogin = async (request, response) => {
     const { username, password } = request.body;
 
     try {
         const user = await User.findOne({ username });
-        if(!user) {
+        if (!user) {
             throw CustomException('Check username or password!', 404);
         }
 
+        // Check if the user is verified
+        if (!user.isVerified) {
+            return response.status(403).send({
+                error: true,
+                message: 'Please verify your email before logging in.'
+            });
+        }
+
         const match = bcrypt.compareSync(password, user.password);
-        if(match) {
+        if (match) {
             const { password, ...data } = user._doc;
 
             const token = jwt.sign({
@@ -69,22 +233,21 @@ const authLogin = async (request, response) => {
             };
 
             return response.cookie('accessToken', token, cookieConfig)
-            .status(202).send({
-                error: false,
-                message: 'Success!',
-                user: {...data, token: token}
-            })
+                .status(202).send({
+                    error: false,
+                    message: 'Success!',
+                    user: { ...data, token: token }
+                });
         }
-        
+
         throw CustomException('Check username or password!', 404);
-    }
-    catch({ message, status = 500 }) {
+    } catch ({ message, status = 500 }) {
         return response.status(status).send({
             error: true,
             message
-        })
+        });
     }
-}
+};
 
 const authLogout = async (request, response) => {
     return response.clearCookie('accessToken', {
@@ -124,5 +287,6 @@ module.exports = {
     authLogin,
     authLogout,
     authRegister,
-    authStatus
+    authStatus,
+    verifyEmail
 }

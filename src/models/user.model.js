@@ -35,6 +35,10 @@ const userSchema = new mongoose.Schema({
         type: Boolean,
         default: false,
         required: false,
+    },
+    isVerified: { 
+        type: Boolean, 
+        default: false 
     }
 }, {
     versionKey: false,
