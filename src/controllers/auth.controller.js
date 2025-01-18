@@ -18,13 +18,12 @@ const sendVerificationEmail = async (email, username, token) => {
     const mailOptions = {
         from: process.env.EMAIL_USER, // Replace with your app name and email
         to: email,
-        subject: 'Verify Your Gigsta Email Address',
+        subject: 'Action Required: Verify Your Email Address',
         html: `
-            <p>Hi ${username},</p>
-            <p>Thank you for signing up for <a href=${process.env.FRONTEND_URL} target="_blank">Gigsta.ai</a>! To complete the account creation process, please verify your email address by clicking the link below:</p>
-            <p>Verify My Email Address: <a href="${verificationUrl}" target="_blank">${verificationUrl}</a></p>
-            <p>This link will expire in 24 hours. If you did not sign up for a Gigsta.AI account, you can safely ignore this email.</p>
-            <p>If you have any questions or need assistance, feel free to contact us at <a href=mailto:bilal@madeinsouth.la>bilal@madeinsouth.la</a></p>
+            <p><strong>Hi ${username},</strong></p>
+            <p>Thank you for signing up for <a href=${process.env.FRONTEND_URL} target="_blank">Gigsta.ai</a>! Please verify your email by clicking the link below:</p>
+            <p><a href="${verificationUrl}" target="_blank">${verificationUrl}</a></p>
+            <p>This link will expire in 24 hours.</p>
             <p>Best regards, <br /> Gigsta Team</p>
         `
     };
@@ -66,7 +65,7 @@ const authRegister = async (request, response) => {
 
         return response.status(201).send({
             error: false,
-            message: 'An email has been sent to your registered address. Please check your inbox and click the verification link to activate your account.'
+            message: 'A verification email has been sent to your registered address.'
         });
     } catch (err) {
         if (err.message.includes('E11000')) {
@@ -108,7 +107,7 @@ const verifyEmail = async (request, response) => {
 
         return response.status(200).send({
             error: false,
-            message: 'Your account has been successfully verified. You can now log in and start using our services.'
+            message: 'Your account has been successfully verified.'
         });
     } catch (err) {
         return response.status(400).send({
