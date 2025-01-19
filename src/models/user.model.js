@@ -15,6 +15,10 @@ const userSchema = new mongoose.Schema({
         type: String,
         required: true,
     },
+    // confirm_new_password: {
+    //     type: String,
+    //     required: true,
+    // },
     image: {
         type: String,
         required: false,
@@ -25,7 +29,7 @@ const userSchema = new mongoose.Schema({
     },
     phone: {
         type: String,
-        required: true,
+        required: false,
     },
     description: {
         type: String,
