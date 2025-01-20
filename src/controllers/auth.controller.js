@@ -51,7 +51,7 @@ const authRegister = async (request, response) => {
             image,
             description,
             isSeller,
-            phone,
+            // phone,
             isVerified: false // Add an isVerified field in your User model
         });
 
