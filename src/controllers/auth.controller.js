@@ -31,6 +31,24 @@ const sendVerificationEmail = async (email, username, token) => {
     await transporter.sendMail(mailOptions);
 };
 
+const sendResetPasswordEmail = async (email, username, token) => {
+    const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
+    const mailOptions = {
+        from: process.env.EMAIL_USER, // Replace with your app name and email
+        to: email,
+        subject: 'Reset Your Password',
+        html: `
+            <p>Hello <strong>${username}</strong>,</p>
+            <p>We received a request to reset your password. Please click the link below to reset it:</p>
+            <p><a href="${resetUrl}" target="_blank">${resetUrl}</a></p>
+            <p>If you did not request this, you can safely ignore this email. This link will expire in 24 hours.</p>
+            <p>Best regards, <br /> Gigsta Team</p>
+        `
+    };
+
+    await transporter.sendMail(mailOptions);
+};
+
 const authRegister = async (request, response) => {
     const { username, email, phone, password, image, isSeller, description } = request.body;
 
@@ -168,15 +186,82 @@ const authLogin = async (request, response) => {
     }
 };
 
+const authResetPassword = async (request, response) => {
+    const { email } = request.body;
+
+    try {
+        const existingUser = await User.findOne({ email });
+        if (!existingUser) {
+            return response.status(404).send({
+                error: true,
+                message: 'Email does not exists!'
+            });
+        }
+
+        // Generate a verification token
+        const token = jwt.sign({ userId: existingUser._id }, process.env.JWT_SECRET, { expiresIn: '1d' });
+
+        // Send verification email
+        await sendResetPasswordEmail(email, existingUser.username, token);
+
+        return response.status(201).send({
+            error: false,
+            message: 'A password reset email has been sent to your registered address.'
+        });
+    } catch (err) {
+        if (err.message.includes('E11000')) {
+            return response.status(400).send({
+                error: true,
+                message: 'Choose a unique email!'
+            });
+        }
+
+        return response.status(500).send({
+            error: true,
+            message: err.message
+        });
+    }
+};
+
+const authConfirmPassword = async (request, response) => {
+    const { token } = request.query;
+    const { new_password } = request.body;
+    try {
+        const hash = await bcrypt.hash(new_password, saltRounds);
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const user = await User.findById(decoded.userId);
+
+        if (!user) {
+            return response.status(400).send({
+                error: true,
+                message: 'Invalid token or user does not exist.'
+            });
+        }
+
+        user.password = hash;
+        await user.save();
+
+        return response.status(200).send({
+            error: false,
+            message: 'Your password has been successfully changed.'
+        });
+    } catch (err) {
+        return response.status(400).send({
+            error: true,
+            message: 'Invalid or expired token.'
+        });
+    }
+}
+
 const authLogout = async (request, response) => {
     return response.clearCookie('accessToken', {
         sameSite: 'none',
         secure: true
     })
-    .send({
-        error: false,
-        message: 'User have been logged out!'
-    });
+        .send({
+            error: false,
+            message: 'User have been logged out!'
+        });
 }
 
 const authStatus = async (request, response) => {
@@ -184,7 +269,7 @@ const authStatus = async (request, response) => {
         const user = await User.findOne({ _id: request.userID }).select('-password');
         console.log(user, "user auth status");
 
-        if(!user) {
+        if (!user) {
             throw CustomException('User not found!', 404);
         }
 
@@ -207,5 +292,6 @@ module.exports = {
     authLogout,
     authRegister,
     authStatus,
-    verifyEmail
+    verifyEmail,
+    authResetPassword, authConfirmPassword
 }

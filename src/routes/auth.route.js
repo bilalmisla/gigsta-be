@@ -1,5 +1,5 @@
 const express = require('express');
-const { authLogin, authLogout, authRegister, authStatus, verifyEmail } = require('../controllers/auth.controller');
+const { authLogin, authLogout, authRegister, authStatus, verifyEmail, authResetPassword, authConfirmPassword } = require('../controllers/auth.controller');
 const { authenticate } = require('../middlewares');
 const { User } = require('../models');
 
@@ -19,6 +19,12 @@ app.get('/me', authenticate, authStatus);
 
 // Route for email verification
 app.get('/verify-email', verifyEmail);
+
+// Route for reset password
+app.post('/reset-password', authResetPassword);
+
+// Route for confirm password
+app.post('/confirm-password', authConfirmPassword);
 
 // Middleware to verify token
 const authenticateToken = async (req, res, next) => {
