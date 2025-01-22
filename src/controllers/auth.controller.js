@@ -267,8 +267,6 @@ const authLogout = async (request, response) => {
 const authStatus = async (request, response) => {
     try {
         const user = await User.findOne({ _id: request.userID }).select('-password');
-        console.log(user, "user auth status");
-
         if (!user) {
             throw CustomException('User not found!', 404);
         }
@@ -287,11 +285,41 @@ const authStatus = async (request, response) => {
     }
 }
 
+const authUpdatePassword = async (request, response) => {
+    const { password, new_password } = request.body;
+    try {
+        const user = await User.findOne({ _id: request.userID });
+        if (!user) {
+            throw CustomException('User not found!', 404);
+        }
+
+        const match = bcrypt.compareSync(password, user.password);
+        if (match) {
+            const hash = await bcrypt.hash(new_password, saltRounds);
+            
+            user.password = hash;
+            await user.save();
+
+            return response.status(200).send({
+                error: false,
+                message: 'Your password has been successfully updated.'
+            });
+        }
+        
+        throw CustomException('Your current password is not valid!', 404);
+    } catch (error) {
+        return response.status(error.status).send({
+            error: true,
+            message: error.message
+        })
+    }
+}
+
 module.exports = {
     authLogin,
     authLogout,
     authRegister,
     authStatus,
     verifyEmail,
-    authResetPassword, authConfirmPassword
+    authResetPassword, authConfirmPassword, authUpdatePassword
 }

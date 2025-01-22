@@ -1,5 +1,9 @@
 const express = require('express');
-const { authLogin, authLogout, authRegister, authStatus, verifyEmail, authResetPassword, authConfirmPassword } = require('../controllers/auth.controller');
+const { 
+    authLogin, authLogout, authRegister, authStatus, 
+    verifyEmail, authResetPassword, authConfirmPassword, 
+    authUpdatePassword 
+} = require('../controllers/auth.controller');
 const { authenticate } = require('../middlewares');
 const { User } = require('../models');
 
@@ -25,6 +29,9 @@ app.post('/reset-password', authResetPassword);
 
 // Route for confirm password
 app.post('/confirm-password', authConfirmPassword);
+
+// Route for update password
+app.post('/update-password', authenticate, authUpdatePassword);
 
 // Middleware to verify token
 const authenticateToken = async (req, res, next) => {
