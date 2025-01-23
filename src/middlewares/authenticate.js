@@ -12,6 +12,7 @@ const authenticate = (request, response, next) => {
         const verification = jwt.verify(token, process.env.JWT_SECRET);
         if(verification) {
             request.userID = verification._id;
+            request.token = token;
             return next();
         }
 

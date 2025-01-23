@@ -2,7 +2,9 @@ const express = require('express');
 const { 
     authLogin, authLogout, authRegister, authStatus, 
     verifyEmail, authResetPassword, authConfirmPassword, 
-    authUpdatePassword 
+    authUpdatePassword, 
+    authUpdateProfile,
+    authUpdateEmail
 } = require('../controllers/auth.controller');
 const { authenticate } = require('../middlewares');
 const { User } = require('../models');
@@ -32,6 +34,12 @@ app.post('/confirm-password', authConfirmPassword);
 
 // Route for update password
 app.post('/update-password', authenticate, authUpdatePassword);
+
+// Route for update profile
+app.post('/update-profile', authenticate, authUpdateProfile);
+
+// Route for update profile
+app.get('/update-email', authenticate, authUpdateEmail);
 
 // Middleware to verify token
 const authenticateToken = async (req, res, next) => {

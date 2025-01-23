@@ -49,6 +49,24 @@ const sendResetPasswordEmail = async (email, username, token) => {
     await transporter.sendMail(mailOptions);
 };
 
+const sendConfirmationUpdateEmail = async (email, username, token) => {
+    const resetUrl = `${process.env.FRONTEND_URL}/account?token=${token}`;
+    const mailOptions = {
+        from: process.env.EMAIL_USER, // Replace with your app name and email
+        to: email,
+        subject: 'Update Your Email',
+        html: `
+            <p>Hello <strong>${username}</strong>,</p>
+            <p>We received a request to update your email. Please click the link below to update it:</p>
+            <p><a href="${resetUrl}" target="_blank" style="padding: 12px 20px; color: #ffffff; text-decoration: none; background-color: #f10Bad; border-radius: 10px;">Update Your Email</a></p>
+            <p>If you did not request this, you can safely ignore this email. This link will expire in 24 hours.</p>
+            <p>Best regards, <br /> Gigsta Team</p>
+        `
+    };
+
+    await transporter.sendMail(mailOptions);
+};
+
 const authRegister = async (request, response) => {
     const { username, email, phone, password, image, isSeller, description } = request.body;
 
@@ -315,11 +333,78 @@ const authUpdatePassword = async (request, response) => {
     }
 }
 
+const authUpdateProfile = async (request, response) => {
+    const { username, email, description, image } = request.body;
+    try {
+        const user = await User.findOne({ _id: request.userID });
+        if (!user) {
+            throw CustomException('User not found!', 404);
+        }
+        let responseMsg = '';
+
+        if (email !== user.email) {
+            // Generate a verification token
+            const token = jwt.sign({ userId: user._id, email: email }, process.env.JWT_SECRET, { expiresIn: '1d' });
+
+            // Send verification email
+            await sendConfirmationUpdateEmail(email, username, token);
+            responseMsg = "Your profile has been successfully updated. A confirmation email has been sent to your registered address."
+        } else {
+            responseMsg = "Your profile has been successfully updated."
+        }
+
+        user.username = username;
+        user.description = description;
+        user.image = image;
+        const updatedUser = await user.save();
+
+        return response.status(200).send({
+            error: false,
+            message: responseMsg,
+            user: { ...updatedUser._doc, token: request.token }
+        });
+    } catch (error) {
+        return response.status(error.status).send({
+            error: true,
+            message: error.message
+        })
+    }
+}
+
+const authUpdateEmail = async (request, response) => {
+    const { token } = request.query;
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const user = await User.findById(decoded.userId);
+
+        if (!user) {
+            return response.status(400).send({
+                error: true,
+                message: 'Invalid token or user does not exist.'
+            });
+        }
+
+        user.email = decoded.email;
+        const updatedUser = await user.save();
+
+        return response.status(200).send({
+            error: false,
+            message: 'Your email has been successfully updated.',
+            user: { ...updatedUser._doc, token: request.token },
+        });
+    } catch (err) {
+        return response.status(400).send({
+            error: true,
+            message: 'Invalid or expired token.'
+        });
+    }
+};
+
 module.exports = {
     authLogin,
     authLogout,
     authRegister,
     authStatus,
     verifyEmail,
-    authResetPassword, authConfirmPassword, authUpdatePassword
+    authResetPassword, authConfirmPassword, authUpdatePassword, authUpdateProfile, authUpdateEmail
 }
