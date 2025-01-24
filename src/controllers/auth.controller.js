@@ -16,7 +16,7 @@ const transporter = nodemailer.createTransport({
 const sendVerificationEmail = async (email, username, token) => {
     const verificationUrl = `${process.env.FRONTEND_URL}/verify-email?token=${token}`;
     const mailOptions = {
-        from: process.env.EMAIL_USER, // Replace with your app name and email
+        from: `"Gigsta-AI" <${process.env.EMAIL_USER}>`, // Replace with your app name and email
         to: email,
         subject: 'Action Required: Verify Your Email Address',
         html: `
@@ -34,7 +34,7 @@ const sendVerificationEmail = async (email, username, token) => {
 const sendResetPasswordEmail = async (email, username, token) => {
     const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
     const mailOptions = {
-        from: process.env.EMAIL_USER, // Replace with your app name and email
+        from: `"Gigsta-AI" <${process.env.EMAIL_USER}>`, // Replace with your app name and email
         to: email,
         subject: 'Reset Your Password',
         html: `
@@ -52,7 +52,7 @@ const sendResetPasswordEmail = async (email, username, token) => {
 const sendConfirmationUpdateEmail = async (email, username, token) => {
     const resetUrl = `${process.env.FRONTEND_URL}/update-email?token=${token}`;
     const mailOptions = {
-        from: process.env.EMAIL_USER, // Replace with your app name and email
+        from: `"Gigsta-AI" <${process.env.EMAIL_USER}>`, // Replace with your app name and email
         to: email,
         subject: 'Update Your Email',
         html: `
