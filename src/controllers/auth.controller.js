@@ -385,12 +385,12 @@ const authUpdateEmail = async (request, response) => {
         }
 
         user.email = decoded.email;
-        const updatedUser = await user.save();
+        await user.save();
 
         return response.status(200).send({
             error: false,
             message: 'Your email has been successfully updated.',
-            user: { ...updatedUser._doc, token: request.token },
+            // user: { ...updatedUser._doc },
         });
     } catch (err) {
         return response.status(400).send({

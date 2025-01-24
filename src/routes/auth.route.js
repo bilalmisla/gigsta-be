@@ -39,7 +39,7 @@ app.post('/update-password', authenticate, authUpdatePassword);
 app.post('/update-profile', authenticate, authUpdateProfile);
 
 // Route for update profile
-app.get('/update-email', authenticate, authUpdateEmail);
+app.get('/update-email', authUpdateEmail);
 
 // Middleware to verify token
 const authenticateToken = async (req, res, next) => {
