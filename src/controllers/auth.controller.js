@@ -50,7 +50,7 @@ const sendResetPasswordEmail = async (email, username, token) => {
 };
 
 const sendConfirmationUpdateEmail = async (email, username, token) => {
-    const resetUrl = `${process.env.FRONTEND_URL}/account?token=${token}`;
+    const resetUrl = `${process.env.FRONTEND_URL}/update-email?token=${token}`;
     const mailOptions = {
         from: process.env.EMAIL_USER, // Replace with your app name and email
         to: email,
