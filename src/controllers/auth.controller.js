@@ -164,6 +164,13 @@ const authLogin = async (request, response) => {
 
         // Check if the user is verified
         if (!user.isVerified) {
+            
+            // Generate a verification token
+            const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '1d' });
+
+            // Send verification email
+            await sendVerificationEmail(user.email, username, token);
+
             return response.status(403).send({
                 error: true,
                 message: 'Please verify your email before logging in.'
@@ -257,6 +264,9 @@ const authConfirmPassword = async (request, response) => {
         }
 
         user.password = hash;
+        // if (!user.isVerified) {
+        //     user.isVerified = true;
+        // }
         await user.save();
 
         return response.status(200).send({
