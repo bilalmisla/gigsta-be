@@ -10,3 +10,4 @@ app.post('/', userMiddleware, createMessage);
 app.get('/:conversationID', userMiddleware, getMessages);
 
 module.exports = app;
+
