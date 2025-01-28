@@ -264,9 +264,6 @@ const authConfirmPassword = async (request, response) => {
         }
 
         user.password = hash;
-        // if (!user.isVerified) {
-        //     user.isVerified = true;
-        // }
         await user.save();
 
         return response.status(200).send({
@@ -332,9 +329,9 @@ const authUpdatePassword = async (request, response) => {
                 error: false,
                 message: 'Your password has been successfully updated.'
             });
-        }
-        
-        throw CustomException('Your current password is not valid!', 404);
+        } else {
+            throw CustomException('Your current password is not valid!', 404);
+        }        
     } catch (error) {
         return response.status(error.status).send({
             error: true,
@@ -346,7 +343,7 @@ const authUpdatePassword = async (request, response) => {
 const authUpdateProfile = async (request, response) => {
     const { username, email, description, image } = request.body;
     try {
-        const user = await User.findOne({ _id: request.userID });
+        const user = await User.findOne({ _id: request.userID }).select('-password');
         if (!user) {
             throw CustomException('User not found!', 404);
         }
