@@ -23,6 +23,20 @@ const createGig = async (request, response) => {
     }
 }
 
+const updateGig = async (request, response) => {
+    const { _id } = request.params;
+    try {
+        const result = await Gig.updateOne({ _id }, { $set: { ...request.body } });
+        return response.status(201).send(result);
+    }
+    catch ({ message, status = 500 }) {
+        return response.status(status).send({
+            error: true,
+            message
+        })
+    }
+}
+
 const deleteGig = async (request, response) => {
     const { _id } = request.params;
 
@@ -94,5 +108,6 @@ module.exports = {
     createGig,
     deleteGig,
     getGig,
-    getGigs
+    getGigs,
+    updateGig
 }
