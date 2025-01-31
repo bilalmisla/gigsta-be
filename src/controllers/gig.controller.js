@@ -3,10 +3,10 @@ const { CustomException } = require('../utils');
 
 const createGig = async (request, response) => {
     try {
-
-        if (!request.isSeller) {
-            throw CustomException('Only sellers can create new Gigs!', 403);
-        }
+        // console.log(request, "dasda");
+        // if (!request.isSeller) {
+        //     throw CustomException('Only sellers can create new Gigs!', 403);
+        // }
 
         const gig = new Gig({
             userID: request.userID,
