@@ -46,7 +46,7 @@ const deleteGig = async (request, response) => {
             await Gig.deleteOne({ _id });
             return response.send({
                 error: false,
-                message: 'Gig had been successfully deleted!'
+                message: 'Gig has been successfully deleted!'
             })
         }
 
