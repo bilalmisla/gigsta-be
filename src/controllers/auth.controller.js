@@ -1,4 +1,4 @@
-const { User } = require('../models');
+const { User, Review, Order, Message, Conversation, Gig } = require('../models');
 const { CustomException } = require('../utils');
 const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
@@ -407,11 +407,46 @@ const authUpdateEmail = async (request, response) => {
     }
 };
 
+const authDeleteAccount = async (request, response) => {
+    try {
+        const user = await User.findOne({ _id: request.userID });
+        if (!user) {
+            throw CustomException('User not found!', 404);
+        }
+        
+        if (user.isSeller) {
+            await Gig.deleteMany({ userID: user._id }); // Delete gigs by user
+            await Conversation.deleteMany({ sellerID: user._id }); // Delete conversations by user
+            await Order.deleteMany({ sellerID: user._id }); // Delete orders by user
+        } else {
+            await Conversation.deleteMany({ buyerID: user._id }); // Delete conversations by user
+            await Order.deleteMany({ buyerID: user._id }); // Delete orders by user
+        }
+        
+        // Delete related records
+        await Message.deleteMany({ userID: user._id }); // Delete orders by user
+        await Review.deleteMany({ userID: user._id }); // Delete reviews by user
+
+        // Finally, delete the user
+        await User.findByIdAndDelete({ _id: request.userID });
+
+        return response.status(200).send({
+            error: false,
+            message: 'Your account has been successfully deleted.'
+        });
+    } catch (error) {
+        return response.status(error.status).send({
+            error: true,
+            message: error.message
+        })
+    }
+}
+
 module.exports = {
     authLogin,
     authLogout,
     authRegister,
     authStatus,
     verifyEmail,
-    authResetPassword, authConfirmPassword, authUpdatePassword, authUpdateProfile, authUpdateEmail
+    authResetPassword, authConfirmPassword, authUpdatePassword, authUpdateProfile, authUpdateEmail, authDeleteAccount
 }

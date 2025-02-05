@@ -4,7 +4,8 @@ const {
     verifyEmail, authResetPassword, authConfirmPassword, 
     authUpdatePassword, 
     authUpdateProfile,
-    authUpdateEmail
+    authUpdateEmail,
+    authDeleteAccount
 } = require('../controllers/auth.controller');
 const { authenticate } = require('../middlewares');
 const { User } = require('../models');
@@ -40,6 +41,9 @@ app.post('/update-profile', authenticate, authUpdateProfile);
 
 // Route for update profile
 app.get('/update-email', authUpdateEmail);
+
+// Route for update profile
+app.delete('/delete-account', authenticate, authDeleteAccount);
 
 // Middleware to verify token
 const authenticateToken = async (req, res, next) => {
