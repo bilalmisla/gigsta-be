@@ -5,7 +5,8 @@ const {
     authUpdatePassword, 
     authUpdateProfile,
     authUpdateEmail,
-    authDeleteAccount
+    authDeleteAccount,
+    signInWithFacebook
 } = require('../controllers/auth.controller');
 const { authenticate } = require('../middlewares');
 const { User } = require('../models');
@@ -44,6 +45,9 @@ app.get('/update-email', authUpdateEmail);
 
 // Route for update profile
 app.delete('/delete-account', authenticate, authDeleteAccount);
+
+// Handle Facebook OAuth Callback
+app.post("/facebook", signInWithFacebook);
 
 // Middleware to verify token
 const authenticateToken = async (req, res, next) => {

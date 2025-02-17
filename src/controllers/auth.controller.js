@@ -5,6 +5,7 @@ const nodemailer = require('nodemailer');
 const bcrypt = require('bcrypt');
 const saltRounds = 10;
 const { OAuth2Client } = require("google-auth-library");
+const { default: axios } = require('axios');
 
 const transporter = nodemailer.createTransport({
     service: 'Gmail', // Use your email provider here
@@ -217,22 +218,22 @@ const authLogin = async (request, response) => {
                         user: { ...data, token: token }
                     });
             } else {
-                
+
                 const user = new User({
                     username: payload.name,
                     email: payload.email,
                     image: payload.picture,
                     isVerified: payload.email_verified
                 });
-    
+
                 const savedUser = await user.save();
                 const { password, ...data } = savedUser._doc;
-    
+
                 const token = jwt.sign({
                     _id: savedUser._id,
                     isSeller: savedUser.isSeller
                 }, process.env.JWT_SECRET, { expiresIn: '7 days' });
-    
+
                 const cookieConfig = {
                     httpOnly: true,
                     sameSite: process.env.NODE_ENV === 'development' ? 'lax' : 'none',
@@ -259,7 +260,7 @@ const authLogin = async (request, response) => {
 
             // Check if the user is verified
             if (!user.isVerified) {
-                
+
                 // Generate a verification token
                 const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '1d' });
 
@@ -416,7 +417,7 @@ const authUpdatePassword = async (request, response) => {
         const match = bcrypt.compareSync(password, user.password);
         if (match) {
             const hash = await bcrypt.hash(new_password, saltRounds);
-            
+
             user.password = hash;
             await user.save();
 
@@ -426,7 +427,7 @@ const authUpdatePassword = async (request, response) => {
             });
         } else {
             throw CustomException('Your current password is not valid!', 404);
-        }        
+        }
     } catch (error) {
         return response.status(error.status).send({
             error: true,
@@ -508,7 +509,7 @@ const authDeleteAccount = async (request, response) => {
         if (!user) {
             throw CustomException('User not found!', 404);
         }
-        
+
         if (user.isSeller) {
             await Gig.deleteMany({ userID: user._id }); // Delete gigs by user
             await Conversation.deleteMany({ sellerID: user._id }); // Delete conversations by user
@@ -517,7 +518,7 @@ const authDeleteAccount = async (request, response) => {
             await Conversation.deleteMany({ buyerID: user._id }); // Delete conversations by user
             await Order.deleteMany({ buyerID: user._id }); // Delete orders by user
         }
-        
+
         // Delete related records
         await Message.deleteMany({ userID: user._id }); // Delete orders by user
         await Review.deleteMany({ userID: user._id }); // Delete reviews by user
@@ -537,11 +538,76 @@ const authDeleteAccount = async (request, response) => {
     }
 }
 
+const FACEBOOK_APP_ID = "455920190822400";
+const FACEBOOK_APP_SECRET = "b08b39fedd93fe891009b21f7b4b0854";
+const REDIRECT_URI = "http://localhost:8080/api/auth/facebook/callback";
+
+// const signInWithFacebook = async (req, res) => {
+//     try {
+//         const { code } = req.query;
+
+//         // 1️⃣ Exchange 'code' for an access token
+//         const tokenResponse = await axios.get(
+//             `https://graph.facebook.com/v18.0/oauth/access_token`,
+//             {
+//                 params: {
+//                     client_id: FACEBOOK_APP_ID,
+//                     client_secret: FACEBOOK_APP_SECRET,
+//                     redirect_uri: REDIRECT_URI,
+//                     code,
+//                 },
+//             }
+//         );
+
+//         const accessToken = tokenResponse.data.access_token;
+
+//         // 2️⃣ Fetch user details
+//         const userResponse = await axios.get(
+//             `https://graph.facebook.com/me?fields=id,name,email&access_token=${accessToken}`
+//         );
+
+//         const { id, name, email } = userResponse.data;
+
+//         // 3️⃣ Check if user exists, else save in MongoDB
+//         let user = await User.findOne({ facebookId: id });
+
+//         if (!user) {
+//             user = new User({ facebookId: id, name, email });
+//             await user.save();
+//         }
+
+//         // 4️⃣ Redirect user to frontend with success message
+//         res.redirect(`${process.env.FRONTEND_URL}/dashboard?userId=${user._id}`);
+//     } catch (error) {
+//         console.error("Facebook OAuth Error:", error.response?.data || error);
+//         res.status(500).json({ error: "Authentication failed" });
+//     }
+// }
+const signInWithFacebook = async (req, res) => {
+    const { accessToken, userID } = req.body;
+
+    try {
+        const facebookVerifyUrl = `https://graph.facebook.com/${userID}?fields=id,name,email,picture&access_token=${accessToken}`;
+        const response = await axios.get(facebookVerifyUrl);
+
+        if (!response.data.email) {
+            throw new Error("Email permission not granted by user.");
+        }
+
+        console.log("Facebook User:", response.data);
+        res.status(200).json({ success: true, user: response.data });
+    } catch (error) {
+        console.error("Facebook Auth Error:", error);
+        res.status(401).json({ success: false, message: error.message || "Invalid Facebook Token" });
+    }
+}
+
 module.exports = {
     authLogin,
     authLogout,
     authRegister,
     authStatus,
     verifyEmail,
-    authResetPassword, authConfirmPassword, authUpdatePassword, authUpdateProfile, authUpdateEmail, authDeleteAccount
+    authResetPassword, authConfirmPassword, authUpdatePassword,
+    authUpdateProfile, authUpdateEmail, authDeleteAccount, signInWithFacebook
 }
