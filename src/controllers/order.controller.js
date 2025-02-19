@@ -54,35 +54,123 @@ const paymentIntent = async (request, response) => {
     }
 }
 
+const checkout = async (request, response) => {
+    const { cart } = request.body; // Array of gigs with quantity
+
+    try {
+        if (!cart.length) {
+            throw CustomException("Cart is empty!", 400);
+        }
+
+        let totalAmount = 0;
+        let orderItems = [];
+
+        for (const item of cart) {
+            const gig = await Gig.findById(item._id);
+            if (!gig) {
+                throw CustomException(`Gig with ID ${item.gigID} not found`, 404);
+            }
+            
+            let itemTotal = gig.price * item.quantity;
+            totalAmount += itemTotal;
+
+            orderItems.push({
+                gigID: gig._id,
+                image: gig.cover,
+                title: gig.title,
+                buyerID: request.userID,
+                sellerID: gig.userID,
+                price: gig.price,
+                quantity: item.quantity,
+                total: itemTotal
+            });
+        }
+
+        // Create a Stripe Payment Intent
+        const paymentIntent = await stripe.paymentIntents.create({
+            amount: totalAmount * 100, // Convert to cents
+            currency: "USD",
+            automatic_payment_methods: { enabled: true },
+        });
+
+        // Save the order to the database
+        const order = new Order({
+            buyerID: request.userID,
+            gigs: orderItems,
+            totalAmount,
+            payment_intent: paymentIntent.id
+        });
+
+        await order.save();
+
+        return response.send({
+            error: false,
+            clientSecret: paymentIntent.client_secret
+        });
+
+    } catch ({ message, status = 500 }) {
+        return response.status(status).send({
+            error: true,
+            message
+        });
+    }
+};
+
+// const updatePaymentStatus = async (request, response) => {
+//     const { payment_intent } = request.body;
+
+//     try {
+//         const order = await Order.findOneAndUpdate({ payment_intent }, {
+//             $set: {
+//                 isCompleted: true
+//             }
+//         }, { new: true });
+
+//         if(order?.isCompleted) {
+//             return response.status(202).send({
+//                 error: false,
+//                 message: 'Order has been confirmed!'
+//             })
+//         }
+
+//         throw CustomException('Payment status not updated!', 500);
+//     }
+//     catch({message, status = 500}) {
+//         return response.status(status).send({
+//             error: true,
+//             message
+//         })
+//     }
+// }
 const updatePaymentStatus = async (request, response) => {
     const { payment_intent } = request.body;
 
     try {
-        const order = await Order.findOneAndUpdate({ payment_intent }, {
-            $set: {
-                isCompleted: true
-            }
-        }, { new: true });
+        const order = await Order.findOneAndUpdate(
+            { payment_intent },
+            { $set: { isCompleted: true } },
+            { new: true }
+        );
 
-        if(order?.isCompleted) {
+        if (order?.isCompleted) {
             return response.status(202).send({
                 error: false,
                 message: 'Order has been confirmed!'
-            })
+            });
         }
 
         throw CustomException('Payment status not updated!', 500);
     }
-    catch({message, status = 500}) {
+    catch ({ message, status = 500 }) {
         return response.status(status).send({
             error: true,
             message
-        })
+        });
     }
-}
+};
 
 module.exports = {
     getOrders,
     paymentIntent,
-    updatePaymentStatus
+    updatePaymentStatus, checkout
 }

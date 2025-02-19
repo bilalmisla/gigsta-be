@@ -299,7 +299,7 @@ const authStatus = async (request, response) => {
         return response.send({
             error: false,
             message: 'Success!',
-            user
+            user: { ...user._doc, token: request.token }
         })
     }
     catch (error) {
