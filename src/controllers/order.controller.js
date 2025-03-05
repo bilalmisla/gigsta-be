@@ -4,7 +4,7 @@ const stripe = require('stripe')(process.env.STRIPE_SECRET);
 
 const getOrders = async (request, response) => {
     try {
-        const orders = await Order.find({ $and: [{ $or: [{ sellerID: request.userID }, { buyerID: request.userID }] }, { isCompleted: true }] }).populate(request.isSeller? 'buyerID' : 'sellerID', 'username email image country');
+        const orders = await Order.find({ $and: [{ $or: [{ buyerID: request.userID }] }, { isCompleted: true }] }).populate(request.isSeller? 'buyerID' : 'sellerID', 'username email image country');
         return response.send(orders);
     }
     catch ({ message, status = 500 }) {
