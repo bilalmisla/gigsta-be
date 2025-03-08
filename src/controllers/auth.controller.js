@@ -173,139 +173,226 @@ const verifyEmail = async (request, response) => {
     }
 };
 
-const authLogin = async (request, response) => {
-    const { username, password, credential } = request.body;
+// const authLogin = async (request, response) => {
+//     const { username, password, credential } = request.body;
+
+//     try {
+//         if (credential) {
+//             // for signing in social links
+//             const ticket = await client.verifyIdToken({
+//                 idToken: credential,
+//                 audience: process.env.GOOGLE_CLIENT_ID,
+//             });
+
+//             const payload = ticket.getPayload();
+
+//             console.log("Google User: ", payload);
+//             const existingUser = await User.findOne({ email: payload.email });
+//             if (existingUser) {
+
+//                 existingUser.username = payload.name;
+//                 existingUser.email = payload.email;
+//                 existingUser.image = payload.picture;
+//                 existingUser.isVerified = payload.email_verified;
+//                 existingUser.save();
+
+//                 const { password, ...data } = existingUser._doc;
+
+//                 const token = jwt.sign({
+//                     _id: existingUser._id,
+//                     isSeller: existingUser.isSeller
+//                 }, process.env.JWT_SECRET, { expiresIn: '7 days' });
+
+//                 const cookieConfig = {
+//                     httpOnly: true,
+//                     sameSite: process.env.NODE_ENV === 'development' ? 'lax' : 'none',
+//                     secure: process.env.NODE_ENV === 'development' ? false : true,
+//                     maxAge: 60 * 60 * 24 * 7 * 1000, // 7 days
+//                     path: '/'
+//                 };
+
+//                 return response.cookie('accessToken', token, cookieConfig)
+//                     .status(202).send({
+//                         error: false,
+//                         message: 'Success!',
+//                         user: { ...data, token: token }
+//                     });
+//             } else {
+
+//                 const user = new User({
+//                     username: payload.name,
+//                     email: payload.email,
+//                     image: payload.picture,
+//                     isVerified: payload.email_verified
+//                 });
+
+//                 const savedUser = await user.save();
+//                 const { password, ...data } = savedUser._doc;
+
+//                 const token = jwt.sign({
+//                     _id: savedUser._id,
+//                     isSeller: savedUser.isSeller
+//                 }, process.env.JWT_SECRET, { expiresIn: '7 days' });
+
+//                 const cookieConfig = {
+//                     httpOnly: true,
+//                     sameSite: process.env.NODE_ENV === 'development' ? 'lax' : 'none',
+//                     secure: process.env.NODE_ENV === 'development' ? false : true,
+//                     maxAge: 60 * 60 * 24 * 7 * 1000, // 7 days
+//                     path: '/'
+//                 };
+
+//                 await sendConfirmAccountCreatedEmail(savedUser?.email, savedUser?.username);
+
+//                 return response.cookie('accessToken', token, cookieConfig)
+//                     .status(202).send({
+//                         error: false,
+//                         message: 'Success!',
+//                         user: { ...data, token: token }
+//                     });
+//             }
+//         } else {
+//             // default functionality
+//             const user = await User.findOne({ username });
+//             if (!user) {
+//                 throw CustomException('Check username or password!', 404);
+//             }
+
+//             // Check if the user is verified
+//             if (!user.isVerified) {
+
+//                 // Generate a verification token
+//                 const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '1d' });
+
+//                 // Send verification email
+//                 await sendVerificationEmail(user.email, username, token);
+
+//                 return response.status(403).send({
+//                     error: true,
+//                     message: 'Please verify your email before logging in.'
+//                 });
+//             }
+
+//             const match = bcrypt.compareSync(password, user.password);
+//             if (match) {
+//                 const { password, ...data } = user._doc;
+
+//                 const token = jwt.sign({
+//                     _id: user._id,
+//                     isSeller: user.isSeller
+//                 }, process.env.JWT_SECRET, { expiresIn: '7 days' });
+
+//                 const cookieConfig = {
+//                     httpOnly: true,
+//                     sameSite: process.env.NODE_ENV === 'development' ? 'lax' : 'none',
+//                     secure: process.env.NODE_ENV === 'development' ? false : true,
+//                     maxAge: 60 * 60 * 24 * 7 * 1000, // 7 days
+//                     path: '/'
+//                 };
+
+//                 return response.cookie('accessToken', token, cookieConfig)
+//                     .status(202).send({
+//                         error: false,
+//                         message: 'Success!',
+//                         user: { ...data, token: token }
+//                     });
+//             }
+//             throw CustomException('Check username or password!', 404);
+//         }
+//     } catch ({ message, status = 500 }) {
+//         return response.status(status).send({
+//             error: true,
+//             message
+//         });
+//     }
+// };
+
+
+// HANDLE LOGIN WITH SOCIAL LINKS
+
+const authLogin = async (req, res) => {
+    const { username, password, credential } = req.body;
 
     try {
         if (credential) {
-            // for signing in social links
-            const ticket = await client.verifyIdToken({
-                idToken: credential,
-                audience: process.env.GOOGLE_CLIENT_ID,
-            });
-
-            const payload = ticket.getPayload();
-
-            console.log("Google User: ", payload);
-            const existingUser = await User.findOne({ email: payload.email });
-            if (existingUser) {
-
-                existingUser.username = payload.name;
-                existingUser.email = payload.email;
-                existingUser.image = payload.picture;
-                existingUser.isVerified = payload.email_verified;
-                existingUser.save();
-
-                const { password, ...data } = existingUser._doc;
-
-                const token = jwt.sign({
-                    _id: existingUser._id,
-                    isSeller: existingUser.isSeller
-                }, process.env.JWT_SECRET, { expiresIn: '7 days' });
-
-                const cookieConfig = {
-                    httpOnly: true,
-                    sameSite: process.env.NODE_ENV === 'development' ? 'lax' : 'none',
-                    secure: process.env.NODE_ENV === 'development' ? false : true,
-                    maxAge: 60 * 60 * 24 * 7 * 1000, // 7 days
-                    path: '/'
-                };
-
-                return response.cookie('accessToken', token, cookieConfig)
-                    .status(202).send({
-                        error: false,
-                        message: 'Success!',
-                        user: { ...data, token: token }
-                    });
-            } else {
-
-                const user = new User({
-                    username: payload.name,
-                    email: payload.email,
-                    image: payload.picture,
-                    isVerified: payload.email_verified
-                });
-
-                const savedUser = await user.save();
-                const { password, ...data } = savedUser._doc;
-
-                const token = jwt.sign({
-                    _id: savedUser._id,
-                    isSeller: savedUser.isSeller
-                }, process.env.JWT_SECRET, { expiresIn: '7 days' });
-
-                const cookieConfig = {
-                    httpOnly: true,
-                    sameSite: process.env.NODE_ENV === 'development' ? 'lax' : 'none',
-                    secure: process.env.NODE_ENV === 'development' ? false : true,
-                    maxAge: 60 * 60 * 24 * 7 * 1000, // 7 days
-                    path: '/'
-                };
-
-                await sendConfirmAccountCreatedEmail(savedUser?.email, savedUser?.username);
-
-                return response.cookie('accessToken', token, cookieConfig)
-                    .status(202).send({
-                        error: false,
-                        message: 'Success!',
-                        user: { ...data, token: token }
-                    });
-            }
-        } else {
-            // default functionality
-            const user = await User.findOne({ username });
-            if (!user) {
-                throw CustomException('Check username or password!', 404);
-            }
-
-            // Check if the user is verified
-            if (!user.isVerified) {
-
-                // Generate a verification token
-                const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '1d' });
-
-                // Send verification email
-                await sendVerificationEmail(user.email, username, token);
-
-                return response.status(403).send({
-                    error: true,
-                    message: 'Please verify your email before logging in.'
-                });
-            }
-
-            const match = bcrypt.compareSync(password, user.password);
-            if (match) {
-                const { password, ...data } = user._doc;
-
-                const token = jwt.sign({
-                    _id: user._id,
-                    isSeller: user.isSeller
-                }, process.env.JWT_SECRET, { expiresIn: '7 days' });
-
-                const cookieConfig = {
-                    httpOnly: true,
-                    sameSite: process.env.NODE_ENV === 'development' ? 'lax' : 'none',
-                    secure: process.env.NODE_ENV === 'development' ? false : true,
-                    maxAge: 60 * 60 * 24 * 7 * 1000, // 7 days
-                    path: '/'
-                };
-
-                return response.cookie('accessToken', token, cookieConfig)
-                    .status(202).send({
-                        error: false,
-                        message: 'Success!',
-                        user: { ...data, token: token }
-                    });
-            }
-            throw CustomException('Check username or password!', 404);
+            return await handleSocialLogin(credential, res);
         }
+        return await handleDefaultLogin(username, password, res);
     } catch ({ message, status = 500 }) {
-        return response.status(status).send({
-            error: true,
-            message
-        });
+        return res.status(status).send({ error: true, message });
     }
 };
+
+const handleSocialLogin = async (credential, res) => {
+    const ticket = await client.verifyIdToken({
+        idToken: credential,
+        audience: process.env.GOOGLE_CLIENT_ID,
+    });
+    
+    const payload = ticket.getPayload();
+    console.log("Google User:", payload);
+    
+    let user = await User.findOne({ email: payload.email });
+    if (!user) {
+        user = new User({
+            username: payload.name,
+            email: payload.email,
+            image: payload.picture,
+            isVerified: payload.email_verified,
+            googleId: payload.sub
+        });
+        await user.save();
+        await sendConfirmAccountCreatedEmail(user.email, user.username);
+    } else {
+        Object.assign(user, {
+            username: payload.name,
+            email: payload.email,
+            image: payload.picture,
+            isVerified: payload.email_verified,
+            googleId: payload.sub
+        });
+        await user.save();
+    }
+
+    return sendSuccessResponse(user, res);
+};
+
+const handleDefaultLogin = async (username, password, res) => {
+    const user = await User.findOne({ username });
+    if (!user) throw CustomException('Check username or password!', 404);
+
+    if (!user.isVerified) {
+        const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '1d' });
+        await sendVerificationEmail(user.email, username, token);
+        return res.status(403).send({ error: true, message: 'Please verify your email before logging in.' });
+    }
+
+    if (!bcrypt.compareSync(password, user.password)) {
+        throw CustomException('Check username or password!', 404);
+    }
+
+    return sendSuccessResponse(user, res);
+};
+
+const sendSuccessResponse = (user, res) => {
+    const { password, ...userData } = user._doc;
+    const token = jwt.sign({ _id: user._id, isSeller: user.isSeller }, process.env.JWT_SECRET, { expiresIn: '7 days' });
+    
+    const cookieConfig = {
+        httpOnly: true,
+        sameSite: process.env.NODE_ENV === 'development' ? 'lax' : 'none',
+        secure: process.env.NODE_ENV !== 'development',
+        maxAge: 60 * 60 * 24 * 7 * 1000,
+        path: '/'
+    };
+
+    return res.cookie('accessToken', token, cookieConfig)
+        .status(202)
+        .send({ error: false, message: 'Success!', user: { ...userData, token } });
+};
+
+// HANDLE LOGIN WITH SOCIAL LINKS
+
 
 const authResetPassword = async (request, response) => {
     const { email } = request.body;
