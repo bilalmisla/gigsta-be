@@ -8,10 +8,10 @@ const { OAuth2Client } = require("google-auth-library");
 const { default: axios } = require('axios');
 
 const transporter = nodemailer.createTransport({
-    service: 'Gmail', // Use your email provider here
+    service: 'Gmail',
     auth: {
-        user: process.env.EMAIL_USER, // Your email address
-        pass: process.env.EMAIL_PASS  // Your email password or app-specific password
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
     }
 });
 
@@ -329,41 +329,31 @@ const handleSocialLogin = async (credential, res) => {
             idToken: credential,
             audience: process.env.GOOGLE_CLIENT_ID,
         });
-
         const payload = ticket.getPayload();
-        console.log("Google User:", payload);
 
-        // Check if a soft-deleted account with the same email exists
-        // let user = await User.findOne({ email: payload.email, deletedAt: { $ne: null } }).select('+deletedAt').exec();
         let user = await User.findOne({
             email: payload.email,
-            deletedAt: { $exists: true, $ne: null }
-          })
-            .select('+deletedAt')
-            .lean()
-            .exec();
-        console.log(user, "user social login");
+            deletedAt: { $ne: null }
+        })
+        .setOptions({ bypassDeletedCheck: true })
+        .select('+deletedAt')
+        .exec();
 
         if (user) {
-            // Restore the soft-deleted account
-            user.deletedAt = null; // Restore the account
-            user.googleId = payload.sub; // Update Google ID
-            user.username = payload.name; // Update username
-            user.image = payload.picture; // Update profile picture
-            user.isVerified = payload.email_verified; // Update verification status
+            user.deletedAt = null;
+            user.googleId = payload.sub;
+            user.username = payload.name;
+            user.image = payload.picture;
+            user.isVerified = payload.email_verified;
             await user.save();
 
-            // Restore all related records
             await restoreRelatedRecords(user._id);
-
             return sendSuccessResponse(user, res);
         }
 
-        // Check if an active account with the same email exists
         user = await User.findOne({ email: payload.email, deletedAt: null });
 
         if (!user) {
-            // Create a new account if no existing account is found
             user = new User({
                 username: payload.name,
                 email: payload.email,
@@ -378,7 +368,6 @@ const handleSocialLogin = async (credential, res) => {
             return sendSuccessResponse(user, res);
         }
 
-        // Update existing user details (if needed)
         Object.assign(user, {
             username: payload.name,
             email: payload.email,
@@ -431,7 +420,6 @@ const sendSuccessResponse = (user, res) => {
 };
 
 // HANDLE LOGIN WITH SOCIAL LINKS
-
 
 const authResetPassword = async (request, response) => {
     const { email } = request.body;
@@ -629,41 +617,6 @@ const authUpdateEmail = async (request, response) => {
     }
 };
 
-// const authDeleteAccount = async (request, response) => {
-//     try {
-//         const user = await User.findOne({ _id: request.userID });
-//         if (!user) {
-//             throw CustomException('User not found!', 404);
-//         }
-
-//         if (user.isSeller) {
-//             await Gig.deleteMany({ userID: user._id }); // Delete gigs by user
-//             await Conversation.deleteMany({ sellerID: user._id }); // Delete conversations by user
-//             await Order.deleteMany({ sellerID: user._id }); // Delete orders by user
-//         } else {
-//             await Conversation.deleteMany({ buyerID: user._id }); // Delete conversations by user
-//             await Order.deleteMany({ buyerID: user._id }); // Delete orders by user
-//         }
-
-//         // Delete related records
-//         await Message.deleteMany({ userID: user._id }); // Delete orders by user
-//         await Review.deleteMany({ userID: user._id }); // Delete reviews by user
-
-//         // Finally, delete the user
-//         await User.findByIdAndDelete({ _id: request.userID });
-
-//         return response.status(200).send({
-//             error: false,
-//             message: 'Your account has been successfully deleted.'
-//         });
-//     } catch (error) {
-//         return response.status(error.status).send({
-//             error: true,
-//             message: error.message
-//         })
-//     }
-// }
-
 const authDeleteAccount = async (request, response) => {
     try {
         const user = await User.findOne({ _id: request.userID });
@@ -709,9 +662,9 @@ const authDeleteAccount = async (request, response) => {
     }
 };
 
-const FACEBOOK_APP_ID = "455920190822400";
-const FACEBOOK_APP_SECRET = "b08b39fedd93fe891009b21f7b4b0854";
-const REDIRECT_URI = "http://localhost:8080/api/auth/facebook/callback";
+// const FACEBOOK_APP_ID = "455920190822400";
+// const FACEBOOK_APP_SECRET = "b08b39fedd93fe891009b21f7b4b0854";
+// const REDIRECT_URI = "http://localhost:8080/api/auth/facebook/callback";
 
 // const signInWithFacebook = async (req, res) => {
 //     try {
@@ -773,29 +726,42 @@ const signInWithFacebook = async (req, res) => {
     }
 }
 
-// Helper function to restore related records
 const restoreRelatedRecords = async (userId) => {
     try {
         // Restore Gigs
-        await Gig.updateMany({ userID: userId, deletedAt: { $ne: null } }, { deletedAt: null }).select('+deletedAt').exec();
+        await Gig.updateMany({ userID: userId, deletedAt: { $ne: null } }, { deletedAt: null })
+        .setOptions({ bypassDeletedCheck: true }) // This prevents the pre-find middleware from running
+        .select('+deletedAt')
+        .exec();;
 
         // Restore Conversations
         await Conversation.updateMany(
             { $or: [{ sellerID: userId }, { buyerID: userId }], deletedAt: { $ne: null } },
             { deletedAt: null }
-        ).select('+deletedAt').exec();
+        ).setOptions({ bypassDeletedCheck: true }) // This prevents the pre-find middleware from running
+        .select('+deletedAt')
+        .exec();
 
         // Restore Orders
         await Order.updateMany(
             { $or: [{ sellerID: userId }, { buyerID: userId }], deletedAt: { $ne: null } },
             { deletedAt: null }
-        ).select('+deletedAt').exec();
+        )
+        .setOptions({ bypassDeletedCheck: true }) // This prevents the pre-find middleware from running
+        .select('+deletedAt')
+        .exec();
 
         // Restore Messages
-        await Message.updateMany({ userID: userId, deletedAt: { $ne: null } }, { deletedAt: null }).select('+deletedAt').exec();
+        await Message.updateMany({ userID: userId, deletedAt: { $ne: null } }, { deletedAt: null })
+        .setOptions({ bypassDeletedCheck: true }) // This prevents the pre-find middleware from running
+        .select('+deletedAt')
+        .exec();
 
         // Restore Reviews
-        await Review.updateMany({ userID: userId, deletedAt: { $ne: null } }, { deletedAt: null }).select('+deletedAt').exec();
+        await Review.updateMany({ userID: userId, deletedAt: { $ne: null } }, { deletedAt: null })
+        .setOptions({ bypassDeletedCheck: true }) // This prevents the pre-find middleware from running
+        .select('+deletedAt')
+        .exec();
 
         console.log("Restored all related records for user:", userId);
     } catch (error) {

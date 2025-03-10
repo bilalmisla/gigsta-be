@@ -58,13 +58,10 @@ const userSchema = new mongoose.Schema({
 });
 
 userSchema.pre(/^find/, function (next) {
-    // Exclude soft-deleted records from all find queries
-    this.where({ deletedAt: null });
+    if (!this.getOptions().bypassDeletedCheck) {
+        this.where({ deletedAt: null }); // Apply filter only when not explicitly bypassed
+    }
     next();
 });
-
-userSchema.statics.findOneIncludingDeleted = function (query) {
-    return this.findOne(query).select('+deletedAt').exec();
-};
 
 module.exports = mongoose.model('User', userSchema);
