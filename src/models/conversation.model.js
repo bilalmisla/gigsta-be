@@ -27,10 +27,20 @@ const conversationSchema = new mongoose.Schema({
     lastMessage: {
         type: String,
         required: false,
+    },
+    deletedAt: {
+        type: Date,
+        default: null
     }
 }, {
     timestamps: true,
     versionKey: false
+});
+
+conversationSchema.pre(/^find/, function (next) {
+    // Exclude soft-deleted records from all find queries
+    this.where({ deletedAt: null });
+    next();
 });
 
 module.exports = mongoose.model('Conversation', conversationSchema);

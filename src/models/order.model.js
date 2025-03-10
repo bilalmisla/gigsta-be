@@ -57,7 +57,17 @@ const orderSchema = new mongoose.Schema({
     }],
     totalAmount: { type: Number, required: true },
     payment_intent: { type: String, required: true },
-    isCompleted: { type: Boolean, default: false }
+    isCompleted: { type: Boolean, default: false },
+    deletedAt: {
+        type: Date,
+        default: null
+    }
 }, { timestamps: true });
+
+orderSchema.pre(/^find/, function (next) {
+    // Exclude soft-deleted records from all find queries
+    this.where({ deletedAt: null });
+    next();
+});
 
 module.exports = mongoose.model("Order", orderSchema);

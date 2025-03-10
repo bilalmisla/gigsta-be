@@ -47,10 +47,24 @@ const userSchema = new mongoose.Schema({
     isVerified: { 
         type: Boolean, 
         default: false 
+    },
+    deletedAt: { // Add this field for soft deletion
+        type: Date,
+        default: null
     }
 }, {
     versionKey: false,
     timestamps: true
 });
+
+userSchema.pre(/^find/, function (next) {
+    // Exclude soft-deleted records from all find queries
+    this.where({ deletedAt: null });
+    next();
+});
+
+userSchema.statics.findOneIncludingDeleted = function (query) {
+    return this.findOne(query).select('+deletedAt').exec();
+};
 
 module.exports = mongoose.model('User', userSchema);

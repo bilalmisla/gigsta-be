@@ -65,9 +65,19 @@ const gigSchema = new mongoose.Schema({
         required: false,
         default: 0
     },
+    deletedAt: {
+        type: Date,
+        default: null
+    }
 }, {
     versionKey: false,
     timestamps: true
+});
+
+gigSchema.pre(/^find/, function (next) {
+    // Exclude soft-deleted records from all find queries
+    this.where({ deletedAt: null });
+    next();
 });
 
 module.exports = mongoose.model('Gig', gigSchema);

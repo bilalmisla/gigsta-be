@@ -19,9 +19,19 @@ const reviewSchema = new mongoose.Schema({
     description: {
         type: String,
         required: true
+    },
+    deletedAt: {
+        type: Date,
+        default: null
     }
 }, {
     versionKey: false
+});
+
+reviewSchema.pre(/^find/, function (next) {
+    // Exclude soft-deleted records from all find queries
+    this.where({ deletedAt: null });
+    next();
 });
 
 module.exports = mongoose.model('Review', reviewSchema);

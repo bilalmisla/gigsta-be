@@ -14,8 +14,18 @@ const messageSchema = new mongoose.Schema({
         type: String,
         required: true,
     },
+    deletedAt: {
+        type: Date,
+        default: null
+    }
 }, {
     versionKey: false
+});
+
+messageSchema.pre(/^find/, function (next) {
+    // Exclude soft-deleted records from all find queries
+    this.where({ deletedAt: null });
+    next();
 });
 
 module.exports = mongoose.model('Message', messageSchema);

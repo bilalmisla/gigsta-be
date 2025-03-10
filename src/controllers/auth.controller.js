@@ -324,37 +324,76 @@ const authLogin = async (req, res) => {
 };
 
 const handleSocialLogin = async (credential, res) => {
-    const ticket = await client.verifyIdToken({
-        idToken: credential,
-        audience: process.env.GOOGLE_CLIENT_ID,
-    });
-    
-    const payload = ticket.getPayload();
-    console.log("Google User:", payload);
-    
-    let user = await User.findOne({ email: payload.email });
-    if (!user) {
-        user = new User({
-            username: payload.name,
-            email: payload.email,
-            image: payload.picture,
-            isVerified: payload.email_verified,
-            googleId: payload.sub
+    try {
+        const ticket = await client.verifyIdToken({
+            idToken: credential,
+            audience: process.env.GOOGLE_CLIENT_ID,
         });
-        await user.save();
-        await sendConfirmAccountCreatedEmail(user.email, user.username);
-    } else {
+
+        const payload = ticket.getPayload();
+        console.log("Google User:", payload);
+
+        // Check if a soft-deleted account with the same email exists
+        // let user = await User.findOne({ email: payload.email, deletedAt: { $ne: null } }).select('+deletedAt').exec();
+        let user = await User.findOne({
+            email: payload.email,
+            deletedAt: { $exists: true, $ne: null }
+          })
+            .select('+deletedAt')
+            .lean()
+            .exec();
+        console.log(user, "user social login");
+
+        if (user) {
+            // Restore the soft-deleted account
+            user.deletedAt = null; // Restore the account
+            user.googleId = payload.sub; // Update Google ID
+            user.username = payload.name; // Update username
+            user.image = payload.picture; // Update profile picture
+            user.isVerified = payload.email_verified; // Update verification status
+            await user.save();
+
+            // Restore all related records
+            await restoreRelatedRecords(user._id);
+
+            return sendSuccessResponse(user, res);
+        }
+
+        // Check if an active account with the same email exists
+        user = await User.findOne({ email: payload.email, deletedAt: null });
+
+        if (!user) {
+            // Create a new account if no existing account is found
+            user = new User({
+                username: payload.name,
+                email: payload.email,
+                image: payload.picture,
+                isVerified: payload.email_verified,
+                googleId: payload.sub,
+            });
+            await user.save();
+            await sendConfirmAccountCreatedEmail(user.email, user.username);
+
+            console.log("Created new user:", user);
+            return sendSuccessResponse(user, res);
+        }
+
+        // Update existing user details (if needed)
         Object.assign(user, {
             username: payload.name,
             email: payload.email,
             image: payload.picture,
             isVerified: payload.email_verified,
-            googleId: payload.sub
+            googleId: payload.sub,
         });
         await user.save();
-    }
 
-    return sendSuccessResponse(user, res);
+        console.log("Updated existing user:", user);
+        return sendSuccessResponse(user, res);
+    } catch (error) {
+        console.error("Error in handleSocialLogin:", error);
+        return sendErrorResponse(res, 500, "Internal server error");
+    }
 };
 
 const handleDefaultLogin = async (username, password, res) => {
@@ -590,6 +629,41 @@ const authUpdateEmail = async (request, response) => {
     }
 };
 
+// const authDeleteAccount = async (request, response) => {
+//     try {
+//         const user = await User.findOne({ _id: request.userID });
+//         if (!user) {
+//             throw CustomException('User not found!', 404);
+//         }
+
+//         if (user.isSeller) {
+//             await Gig.deleteMany({ userID: user._id }); // Delete gigs by user
+//             await Conversation.deleteMany({ sellerID: user._id }); // Delete conversations by user
+//             await Order.deleteMany({ sellerID: user._id }); // Delete orders by user
+//         } else {
+//             await Conversation.deleteMany({ buyerID: user._id }); // Delete conversations by user
+//             await Order.deleteMany({ buyerID: user._id }); // Delete orders by user
+//         }
+
+//         // Delete related records
+//         await Message.deleteMany({ userID: user._id }); // Delete orders by user
+//         await Review.deleteMany({ userID: user._id }); // Delete reviews by user
+
+//         // Finally, delete the user
+//         await User.findByIdAndDelete({ _id: request.userID });
+
+//         return response.status(200).send({
+//             error: false,
+//             message: 'Your account has been successfully deleted.'
+//         });
+//     } catch (error) {
+//         return response.status(error.status).send({
+//             error: true,
+//             message: error.message
+//         })
+//     }
+// }
+
 const authDeleteAccount = async (request, response) => {
     try {
         const user = await User.findOne({ _id: request.userID });
@@ -597,33 +671,43 @@ const authDeleteAccount = async (request, response) => {
             throw CustomException('User not found!', 404);
         }
 
+        const currentTime = Date.now();
+
         if (user.isSeller) {
-            await Gig.deleteMany({ userID: user._id }); // Delete gigs by user
-            await Conversation.deleteMany({ sellerID: user._id }); // Delete conversations by user
-            await Order.deleteMany({ sellerID: user._id }); // Delete orders by user
+            // Soft delete gigs by user
+            await Gig.updateMany({ userID: user._id }, { deletedAt: currentTime });
+
+            // Soft delete conversations by user
+            await Conversation.updateMany({ sellerID: user._id }, { deletedAt: currentTime });
+
+            // Soft delete orders by user
+            await Order.updateMany({ sellerID: user._id }, { deletedAt: currentTime });
         } else {
-            await Conversation.deleteMany({ buyerID: user._id }); // Delete conversations by user
-            await Order.deleteMany({ buyerID: user._id }); // Delete orders by user
+            // Soft delete conversations by user
+            await Conversation.updateMany({ buyerID: user._id }, { deletedAt: currentTime });
+
+            // Soft delete orders by user
+            await Order.updateMany({ buyerID: user._id }, { deletedAt: currentTime });
         }
 
-        // Delete related records
-        await Message.deleteMany({ userID: user._id }); // Delete orders by user
-        await Review.deleteMany({ userID: user._id }); // Delete reviews by user
+        // Soft delete related records
+        await Message.updateMany({ userID: user._id }, { deletedAt: currentTime }); // Soft delete messages by user
+        await Review.updateMany({ userID: user._id }, { deletedAt: currentTime }); // Soft delete reviews by user
 
-        // Finally, delete the user
-        await User.findByIdAndDelete({ _id: request.userID });
+        // Soft delete the user
+        await User.findByIdAndUpdate(user._id, { deletedAt: currentTime });
 
         return response.status(200).send({
             error: false,
             message: 'Your account has been successfully deleted.'
         });
     } catch (error) {
-        return response.status(error.status).send({
+        return response.status(error.status || 500).send({
             error: true,
             message: error.message
-        })
+        });
     }
-}
+};
 
 const FACEBOOK_APP_ID = "455920190822400";
 const FACEBOOK_APP_SECRET = "b08b39fedd93fe891009b21f7b4b0854";
@@ -688,6 +772,37 @@ const signInWithFacebook = async (req, res) => {
         res.status(401).json({ success: false, message: error.message || "Invalid Facebook Token" });
     }
 }
+
+// Helper function to restore related records
+const restoreRelatedRecords = async (userId) => {
+    try {
+        // Restore Gigs
+        await Gig.updateMany({ userID: userId, deletedAt: { $ne: null } }, { deletedAt: null }).select('+deletedAt').exec();
+
+        // Restore Conversations
+        await Conversation.updateMany(
+            { $or: [{ sellerID: userId }, { buyerID: userId }], deletedAt: { $ne: null } },
+            { deletedAt: null }
+        ).select('+deletedAt').exec();
+
+        // Restore Orders
+        await Order.updateMany(
+            { $or: [{ sellerID: userId }, { buyerID: userId }], deletedAt: { $ne: null } },
+            { deletedAt: null }
+        ).select('+deletedAt').exec();
+
+        // Restore Messages
+        await Message.updateMany({ userID: userId, deletedAt: { $ne: null } }, { deletedAt: null }).select('+deletedAt').exec();
+
+        // Restore Reviews
+        await Review.updateMany({ userID: userId, deletedAt: { $ne: null } }, { deletedAt: null }).select('+deletedAt').exec();
+
+        console.log("Restored all related records for user:", userId);
+    } catch (error) {
+        console.error("Error restoring related records:", error);
+        throw error; // Propagate the error to handle it in the main function
+    }
+};
 
 module.exports = {
     authLogin,
