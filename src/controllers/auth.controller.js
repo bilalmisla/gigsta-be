@@ -87,6 +87,22 @@ const sendConfirmAccountCreatedEmail = async (email, username) => {
     await transporter.sendMail(mailOptions);
 }
 
+const sendAccountDeletedEmail = async (email, username) => {
+    const mailOptions = {
+        from: `"Gigsta AI" <${process.env.EMAIL_USER}>`, // Replace with your app name and email
+        to: email,
+        subject: `Delete account, ${username}!`,
+        html: `
+            <p>Hi <strong>${username}</strong>,</p>
+            <p>As per your request, your Gigsta.AI account was deleted.</p>
+            <p>We wish you best of luck moving forward.</p>
+            <p>Best regards, <br /> Gigsta Team</p>
+        `
+    };
+
+    await transporter.sendMail(mailOptions);
+}
+
 const authRegister = async (request, response) => {
     const { username, email, phone, password, image, isSeller, description } = request.body;
 
@@ -499,7 +515,7 @@ const authDeleteAccount = async (request, response) => {
             await Conversation.updateMany({ sellerID: user._id }, { deletedAt: currentTime });
 
             // Soft delete orders by user
-            await Order.updateMany({ sellerID: user._id }, { deletedAt: currentTime });
+            await Order.updateMany({ buyerID: user._id }, { deletedAt: currentTime });
         } else {
             // Soft delete conversations by user
             await Conversation.updateMany({ buyerID: user._id }, { deletedAt: currentTime });
@@ -512,8 +528,11 @@ const authDeleteAccount = async (request, response) => {
         await Message.updateMany({ userID: user._id }, { deletedAt: currentTime }); // Soft delete messages by user
         await Review.updateMany({ userID: user._id }, { deletedAt: currentTime }); // Soft delete reviews by user
 
+        await sendAccountDeletedEmail(user?.email, user?.username);
+
         // Soft delete the user
         await User.findByIdAndUpdate(user._id, { deletedAt: currentTime });
+
 
         return response.status(200).send({
             error: false,
