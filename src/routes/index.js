@@ -5,6 +5,7 @@ const messageRoute = require('./message.route');
 const orderRoute = require('./order.route');
 const reviewRoute = require('./review.route');
 const authRoute = require('./auth.route');
+const contactRoute = require('./contact.route');
 
 module.exports = {
     authRoute,
@@ -13,5 +14,6 @@ module.exports = {
     gigRoute,
     messageRoute,
     orderRoute,
-    reviewRoute
+    reviewRoute,
+    contactRoute
 }

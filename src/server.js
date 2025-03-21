@@ -7,7 +7,7 @@ const connect = require('./configs/db');
 const PORT = 8080;
 
 // Other Route files
-const { userRoute, conversationRoute, gigRoute, messageRoute, orderRoute, reviewRoute, authRoute } = require('./routes');
+const { userRoute, conversationRoute, gigRoute, messageRoute, orderRoute, reviewRoute, authRoute, contactRoute } = require('./routes');
 
 // App
 const app = express();
@@ -30,6 +30,7 @@ app.use('/api/conversations', conversationRoute);
 app.use('/api/orders', orderRoute);
 app.use('/api/messages', messageRoute);
 app.use('/api/reviews', reviewRoute);
+app.use('/api/submit-form', contactRoute);
 
 // Routes
 app.get('/', (request, response) => {
