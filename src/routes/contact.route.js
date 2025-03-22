@@ -12,9 +12,9 @@ const transporter = nodemailer.createTransport({
 
 const sendContactQueryEmail = async (name, email, subject, message) => {
     const mailOptions = {
-        from: `"Gigsta AI" <${process.env.EMAIL_USER}>`, // Your app name and email
-        to: email, // Admin email where queries should be sent
-        subject: `New Contact Form Submission: ${subject}`,
+        from: `"Gigsta AI" <${process.env.EMAIL_USER}>`,
+        to: `${process.env.EMAIL_USER},misla@madeinsouth.la`,
+        subject: `${subject}`,
         html: `
             <p><strong>Name:</strong> ${name}</p>
             <p><strong>Email:</strong> ${email}</p>
