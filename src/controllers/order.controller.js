@@ -4,7 +4,7 @@ const stripe = require('stripe')(process.env.STRIPE_SECRET);
 
 const getOrders = async (request, response) => {
     try {
-        const orders = await Order.find({ $and: [{ $or: [{ buyerID: request.userID }] }, { isCompleted: true }] }).populate(request.isSeller? 'sellerID' : 'buyerID', 'username email image country');
+        const orders = await Order.find({ $and: [{ $or: [{ buyerID: request.userID }] }, { isCompleted: true }] }).populate('buyerID', 'username email image country');
         return response.send(orders);
     }
     catch ({ message, status = 500 }) {
@@ -54,7 +54,7 @@ const paymentIntent = async (request, response) => {
     }
 }
 
-const checkout = async (request, response) => {
+const createPayment = async (request, response) => {
     const { cart } = request.body; // Array of gigs with quantity
 
     try {
@@ -94,20 +94,53 @@ const checkout = async (request, response) => {
         });
 
         // Save the order to the database
-        const order = new Order({
-            buyerID: request.userID,
-            gigs: orderItems,
-            totalAmount,
-            payment_intent: paymentIntent.id
-        });
+        // const order = new Order({
+        //     buyerID: request.userID,
+        //     gigs: orderItems,
+        //     totalAmount,
+        //     payment_intent: paymentIntent.id
+        // });
 
-        await order.save();
+        // await order.save();
 
         return response.send({
             error: false,
+            orderItems,
+            totalAmount,
+            paymentId: paymentIntent.id,
             clientSecret: paymentIntent.client_secret
         });
 
+    } catch ({ message, status = 500 }) {
+        return response.status(status).send({
+            error: true,
+            message
+        });
+    }
+};
+
+const createOrders = async (request, response) => {
+    const { orderItems, paymentIntent, totalAmount } = request.body;
+
+    try {
+        if (paymentIntent) {
+            
+            // Save the order to the database
+            const order = new Order({
+                buyerID: request.userID,
+                gigs: orderItems,
+                totalAmount,
+                payment_intent: paymentIntent.id
+            });
+
+            await order.save();
+
+        }
+
+        return response.send({
+            error: false,
+            message: "Congratulations! Payment got successful."
+        });
     } catch ({ message, status = 500 }) {
         return response.status(status).send({
             error: true,
@@ -172,5 +205,5 @@ const updatePaymentStatus = async (request, response) => {
 module.exports = {
     getOrders,
     paymentIntent,
-    updatePaymentStatus, checkout
+    updatePaymentStatus, createPayment, createOrders
 }

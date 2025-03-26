@@ -1,6 +1,6 @@
 const express = require('express');
 const { userMiddleware } = require('../middlewares');
-const { getOrders, paymentIntent, updatePaymentStatus, checkout } = require('../controllers/order.controller');
+const { getOrders, paymentIntent, updatePaymentStatus, checkout, createOrders, createPayment } = require('../controllers/order.controller');
 const app = express.Router();
 
 // Get all
@@ -13,6 +13,8 @@ app.post('/create-payment-intent/:_id', userMiddleware, paymentIntent);
 app.patch('/', userMiddleware, updatePaymentStatus);
 
 // Payment confirm
-app.post('/checkout', userMiddleware, checkout);
+app.post('/create-payment', userMiddleware, createPayment);
+
+app.post('/create', userMiddleware, createOrders);
 
 module.exports = app;
