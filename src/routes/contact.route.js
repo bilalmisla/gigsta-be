@@ -13,7 +13,7 @@ const transporter = nodemailer.createTransport({
 const sendContactQueryEmail = async (name, email, subject, message) => {
     const mailOptions = {
         from: `"Gigsta AI" <${process.env.EMAIL_USER}>`,
-        to: `${process.env.EMAIL_USER},misla@madeinsouth.la`,
+        to: `${process.env.EMAIL_USER},cassie@gigsta.ai`,
         subject: `${subject}`,
         html: `
             <p><strong>Name:</strong> ${name}</p>
