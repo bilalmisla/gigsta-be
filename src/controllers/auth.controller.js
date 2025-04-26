@@ -130,7 +130,7 @@ const authRegister = async (request, response) => {
         const savedUser = await user.save();
 
         // Generate a verification token
-        const token = jwt.sign({ userId: savedUser._id }, process.env.JWT_SECRET, { expiresIn: '1d' });
+        const token = jwt.sign({ userId: savedUser._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
 
         // Send verification email
         await sendVerificationEmail(email, username, token);
@@ -271,7 +271,7 @@ const handleDefaultLogin = async (username, password, res) => {
     if (!user) throw CustomException('Check username or password!', 404);
 
     if (!user.isVerified) {
-        const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '1d' });
+        const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
         await sendVerificationEmail(user.email, username, token);
         return res.status(403).send({ error: true, message: 'Please verify your email before logging in.' });
     }
