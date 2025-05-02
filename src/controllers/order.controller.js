@@ -4,8 +4,26 @@ const stripe = require('stripe')(process.env.STRIPE_SECRET);
 
 const getOrders = async (request, response) => {
     try {
-        const orders = await Order.find({ $and: [{ $or: [{ buyerID: request.userID }] }, { isCompleted: true }] }).populate('buyerID', 'username email image country');
-        return response.send(orders);
+        const orders = await Order.find({
+            $or: [
+                { buyerID: request.userID },
+                { gigs: { $elemMatch: { sellerID: request.userID } } }
+            ]
+        })
+        .populate('buyerID', 'username email image country')
+        .populate('gigs.sellerID', 'username email image country');
+
+        const updatedOrders = orders.map((item, index) => {
+            if (item._doc.buyerID._id.toString() === request.userID) {
+                return item;
+            }
+            return {
+                ...item._doc,
+                gigs: item._doc.gigs.filter((gig, index) => gig._doc.sellerID._id.toString() === request.userID)
+            };
+        });
+
+        return response.send(updatedOrders);
     }
     catch ({ message, status = 500 }) {
         return response.send({
