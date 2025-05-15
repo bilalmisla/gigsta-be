@@ -25,7 +25,7 @@ const createConversation = async (request, response) => {
 
 const getConversations = async (request, response) => {
     try {
-        const conversation = await Conversation.find(request.isSeller ? { sellerID: request.userID } : { buyerID: request.userID }).populate(request.isSeller ? 'buyerID' : 'sellerID', 'username image email').sort({ updatedAt: -1 });
+        const conversation = await Conversation.find(request.isSeller ? { sellerID: request.userID, deletedBySeller: false } : { buyerID: request.userID, deletedByBuyer: false }).populate(request.isSeller ? 'buyerID' : 'sellerID', 'username image email').sort({ updatedAt: -1 });
         return response.send(conversation);
     }
     catch ({ message, status = 500 }) {
