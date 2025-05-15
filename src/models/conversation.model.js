@@ -28,9 +28,13 @@ const conversationSchema = new mongoose.Schema({
         type: String,
         required: false,
     },
-    deletedAt: {
-        type: Date,
-        default: null
+    deletedBySeller: {
+        type: Boolean,
+        default: false
+    },
+    deletedByBuyer: {
+        type: Boolean,
+        default: false
     }
 }, {
     timestamps: true,
@@ -38,8 +42,14 @@ const conversationSchema = new mongoose.Schema({
 });
 
 conversationSchema.pre(/^find/, function (next) {
-    // Exclude soft-deleted records from all find queries
-    this.where({ deletedAt: null });
+    // Exclude conversations that have been deleted by the current user
+    const userId = this.getQuery().userId;
+    if (userId) {
+        this.or([
+            { sellerID: userId, deletedBySeller: false },
+            { buyerID: userId, deletedByBuyer: false }
+        ]);
+    }
     next();
 });
 

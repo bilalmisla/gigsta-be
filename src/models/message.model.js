@@ -14,9 +14,13 @@ const messageSchema = new mongoose.Schema({
         type: String,
         required: true,
     },
-    deletedAt: {
-        type: Date,
-        default: null
+    deletedBySeller: {
+        type: Boolean,
+        default: false
+    },
+    deletedByBuyer: {
+        type: Boolean,
+        default: false
     }
 }, {
     versionKey: false

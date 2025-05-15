@@ -206,7 +206,9 @@ const createMessage = async (request, response) => {
       $set: {
         readBySeller: request.isSeller,
         readByBuyer: !request.isSeller,
-        lastMessage: description
+        lastMessage: description,
+        deletedByBuyer: false,
+        deletedBySeller: false
       }
     }, { new: true });
 
@@ -241,7 +243,94 @@ const getMessages = async (request, response) => {
   }
 }
 
+const deleteMessage = async (request, response) => {
+  const { messageID } = request.params;
+  
+  try {
+    const message = await Message.findOne({ conversationID: messageID });
+    
+    if (!message) {
+      return response.status(404).send({
+        error: true,
+        message: 'Message not found'
+      });
+    }
+
+    // Check if the user is authorized to delete this message
+    if (message.userID.toString() !== request.userID) {
+      return response.status(403).send({
+        error: true,
+        message: 'Not authorized to delete this message'
+      });
+    }
+
+    // Add the user to the deletedBy array
+    const updateField = request.isSeller ? 'deletedBySeller' : 'deletedByBuyer';
+    await Message.findOneAndUpdate(
+      { conversationID: messageID },
+      { $set: { [updateField]: true } },
+      { new: true }
+    );
+    
+    return response.status(200).send({
+      success: true,
+      message: 'Message deleted successfully'
+    });
+  }
+  catch ({ message, status = 500 }) {
+    return response.status(status).send({
+      error: true,
+      message
+    });
+  }
+};
+
+const deleteConversation = async (request, response) => {
+  const { conversationID } = request.params;
+  
+  try {
+    const conversation = await Conversation.findOne({ conversationID });
+    
+    if (!conversation) {
+      return response.status(404).send({
+        error: true,
+        message: 'Conversation not found'
+      });
+    }
+
+    // Check if the user is part of this conversation
+    if (conversation.sellerID.toString() !== request.userID && 
+        conversation.buyerID.toString() !== request.userID) {
+      return response.status(403).send({
+        error: true,
+        message: 'Not authorized to delete this conversation'
+      });
+    }
+
+    // Add the user to the deletedBy array
+    const updateField = request.isSeller ? 'deletedBySeller' : 'deletedByBuyer';
+    await Conversation.findOneAndUpdate(
+      { conversationID },
+      { $set: { [updateField]: true } },
+      { new: true }
+    );
+    
+    return response.status(200).send({
+      success: true,
+      message: 'Conversation deleted successfully'
+    });
+  }
+  catch ({ message, status = 500 }) {
+    return response.status(status).send({
+      error: true,
+      message
+    });
+  }
+};
+
 module.exports = {
   createMessage,
-  getMessages
+  getMessages,
+  deleteMessage,
+  deleteConversation
 }
