@@ -256,13 +256,14 @@ const deleteMessage = async (request, response) => {
       });
     }
 
-    // Check if the user is authorized to delete this message
-    if (message.userID.toString() !== request.userID) {
-      return response.status(403).send({
-        error: true,
-        message: 'Not authorized to delete this message'
-      });
-    }
+    // console.log(message, message.userID.toString(), request.userID, "message");
+    // // Check if the user is authorized to delete this message
+    // if (message.userID.toString() !== request.userID) {
+    //   return response.status(403).send({
+    //     error: true,
+    //     message: 'Not authorized to delete this message'
+    //   });
+    // }
 
     // Add the user to the deletedBy array
     const updateField = request.isSeller ? 'deletedBySeller' : 'deletedByBuyer';
