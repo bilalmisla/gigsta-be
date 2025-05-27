@@ -14,6 +14,7 @@ const messageSchema = new mongoose.Schema({
         type: String,
         required: true,
     },
+    files: [{ type: String }], // Add this line
     deletedBySeller: {
         type: Boolean,
         default: false

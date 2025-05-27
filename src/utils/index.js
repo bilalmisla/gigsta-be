@@ -1,4 +1,5 @@
 const CustomException = require('./CustomException');
+const { default: axios } = require('axios');
 
 const formatTimestamp = () => {
     const now = new Date();
@@ -28,7 +29,17 @@ const formatTimestamp = () => {
     return `${time}, ${date}`;
 };
 
+async function fetchFileBuffer(fileUrl) {
+    const response = await axios.get(fileUrl, { responseType: 'arraybuffer' });
+    const fileName = fileUrl.split('/').pop(); // or however you parse the name
+    return {
+      filename: fileName,
+      content: Buffer.from(response.data),
+    };
+}
+
 module.exports = {
     formatTimestamp,
-    CustomException
+    CustomException,
+    fetchFileBuffer
 }

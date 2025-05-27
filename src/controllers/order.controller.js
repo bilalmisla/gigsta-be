@@ -1,6 +1,8 @@
-const { Order, Gig } = require('../models');
+const { Order, Gig, User } = require('../models');
 const { CustomException } = require('../utils');
+const { sendBuyerOrderConfirmationEmail, sendSellerOrderNotificationEmail } = require('../utils/emailTemplates');
 const stripe = require('stripe')(process.env.STRIPE_SECRET);
+const nodemailer = require('nodemailer');
 
 const getOrders = async (request, response) => {
     try {
@@ -149,13 +151,52 @@ const createPayment = async (request, response) => {
     }
 };
 
+// const createOrders = async (request, response) => {
+//     const { orderItems, paymentIntent, totalAmount } = request.body;
+
+//     try {
+//         if (paymentIntent) {
+            
+//             // Save the order to the database
+//             const order = new Order({
+//                 buyerID: request.userID,
+//                 gigs: orderItems,
+//                 totalAmount,
+//                 payment_intent: paymentIntent.id
+//             });
+
+//             await order.save();
+
+//         }
+
+//         await sendBuyerOrderConfirmationEmail();
+
+//         return response.send({
+//             error: false,
+//             message: "Congratulations! Payment got successful."
+//         });
+//     } catch ({ message, status = 500 }) {
+//         return response.status(status).send({
+//             error: true,
+//             message
+//         });
+//     }
+// };
+
+
+const transporter = nodemailer.createTransport({
+    service: 'Gmail',
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS
+    }
+});
+
 const createOrders = async (request, response) => {
     const { orderItems, paymentIntent, totalAmount } = request.body;
 
     try {
         if (paymentIntent) {
-            
-            // Save the order to the database
             const order = new Order({
                 buyerID: request.userID,
                 gigs: orderItems,
@@ -165,12 +206,48 @@ const createOrders = async (request, response) => {
 
             await order.save();
 
+            // Fetch buyer info
+            const buyer = await User.findById(request.userID);
+            const sellerName = await User.findById(orderItems[0].sellerID);
+            // const buyer = request.user; // assuming you set request.user from auth middleware
+            const buyerName = buyer.username;
+            const buyerEmail = buyer.email;
+
+            // Send email to Buyer
+            await sendBuyerOrderConfirmationEmail(
+                buyerEmail,
+                buyerName,
+                orderItems.length > 1 ? 'Multiple Gigs' : orderItems[0].title,
+                orderItems.length > 1 ? 'Multiple Sellers' : sellerName.username, // fallback if needed
+                order._id,
+                totalAmount,
+                orderItems.length > 1 ? 'Varies by gig' : `${orderItems[0].deliveryTime || 'N/A'}`,
+                transporter
+            );
+
+            // Send email to each Seller
+            for (const gig of orderItems) {
+                const seller = await User.findById(gig.sellerID); // assuming a User model exists
+                if (seller) {
+                    await sendSellerOrderNotificationEmail(
+                        seller.email,
+                        seller.username,
+                        gig.title,
+                        buyerName,
+                        order._id,
+                        gig.total,
+                        gig.deliveryTime || 'N/A',
+                        transporter
+                    );
+                }
+            }
         }
 
         return response.send({
             error: false,
             message: "Congratulations! Payment got successful."
         });
+
     } catch ({ message, status = 500 }) {
         return response.status(status).send({
             error: true,
