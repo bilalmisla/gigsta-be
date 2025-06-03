@@ -654,6 +654,16 @@ const restoreRelatedRecords = async (userId) => {
     }
 };
 
+const handleFetchProfile = async (req, res) => {
+    const { username } = req.params;
+    const user = await User.findOne({ username: username });
+    if (!user) {
+        throw CustomException('User not found!', 404);
+    }
+
+    return res.status(200).json({ success: true, user: user });
+}
+
 module.exports = {
     authLogin,
     authLogout,
@@ -661,5 +671,5 @@ module.exports = {
     authStatus,
     verifyEmail,
     authResetPassword, authConfirmPassword, authUpdatePassword,
-    authUpdateProfile, authUpdateEmail, authDeleteAccount, signInWithFacebook
+    authUpdateProfile, authUpdateEmail, authDeleteAccount, signInWithFacebook, handleFetchProfile
 }
