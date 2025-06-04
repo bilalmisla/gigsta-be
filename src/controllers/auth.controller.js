@@ -663,7 +663,7 @@ const handleFetchProfile = async (req, res) => {
             throw CustomException('User not found!', 404);
         }
 
-        const gigs = await Gig.find({ userID: user._id });
+        const gigs = await Gig.find({ userID: user._id }).populate('userID', 'username cover email description isSeller _id image');
 
         return res.status(200).json({ success: true, user, gigs });
     } catch (error) {
