@@ -654,6 +654,23 @@ const restoreRelatedRecords = async (userId) => {
     }
 };
 
+const handleFetchProfile = async (req, res) => {
+    try {
+        const { username } = req.params;
+
+        const user = await User.findOne({ username: username });
+        if (!user) {
+            throw CustomException('User not found!', 404);
+        }
+
+        const gigs = await Gig.find({ userID: user._id });
+
+        return res.status(200).json({ success: true, user, gigs });
+    } catch (error) {
+        return res.status(error.statusCode || 500).json({ success: false, message: error.message });
+    }
+}
+
 module.exports = {
     authLogin,
     authLogout,
@@ -661,5 +678,5 @@ module.exports = {
     authStatus,
     verifyEmail,
     authResetPassword, authConfirmPassword, authUpdatePassword,
-    authUpdateProfile, authUpdateEmail, authDeleteAccount, signInWithFacebook
+    authUpdateProfile, authUpdateEmail, authDeleteAccount, signInWithFacebook, handleFetchProfile
 }
