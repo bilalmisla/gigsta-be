@@ -1,9 +1,11 @@
 const express = require('express');
 const { userMiddleware } = require('../middlewares');
-const { deleteUser } = require('../controllers/user.controller');
+const { deleteUser, fetchTopSellers } = require('../controllers/user.controller');
 
 const app = express.Router();
 
 app.delete('/:_id', userMiddleware, deleteUser);
+
+app.get('/top-sellers', fetchTopSellers);
 
 module.exports = app;
