@@ -35,6 +35,47 @@ const getOrders = async (request, response) => {
     }
 }
 
+const getOrderDetailsById = async (request, response) => {
+    try {
+        const { id } = request.params;
+
+        // Find order by ID and populate related fields
+        const order = await Order.findById(id)
+            .populate('buyerID', 'username email image country')
+            .populate('gigs.sellerID', 'username email image country');
+
+        if (!order) {
+            return response.status(404).send({ error: true, message: 'Order not found' });
+        }
+
+        const userId = request.userID;
+
+        // Check access: buyer or one of the sellers
+        const isBuyer = order.buyerID._id.toString() === userId;
+        const isSeller = order.gigs.some(gig => gig.sellerID._id.toString() === userId);
+
+        if (!isBuyer && !isSeller) {
+            return response.status(403).send({ error: true, message: 'Access denied' });
+        }
+
+        // Filter out gigs not belonging to this seller (if not buyer)
+        if (!isBuyer) {
+            const filteredOrder = {
+                ...order._doc,
+                gigs: order.gigs.filter(gig => gig.sellerID._id.toString() === userId)
+            };
+            return response.send(filteredOrder);
+        }
+
+        return response.send(order);
+    } catch (err) {
+        return response.status(err.status || 500).send({
+            error: true,
+            message: err.message || 'Server error'
+        });
+    }
+};
+
 const paymentIntent = async (request, response) => {
     const { _id } = request.params;
 
@@ -286,5 +327,5 @@ const updatePaymentStatus = async (request, response) => {
 module.exports = {
     getOrders,
     paymentIntent,
-    updatePaymentStatus, createPayment, createOrders
+    updatePaymentStatus, createPayment, createOrders, getOrderDetailsById
 }
