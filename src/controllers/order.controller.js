@@ -1,4 +1,4 @@
-const { Order, Gig, User } = require('../models');
+const { Order, Gig, User, OrderStatus } = require('../models');
 const { CustomException } = require('../utils');
 const { sendBuyerOrderConfirmationEmail, sendSellerOrderNotificationEmail } = require('../utils/emailTemplates');
 const stripe = require('stripe')(process.env.STRIPE_SECRET);
@@ -90,16 +90,6 @@ const paymentIntent = async (request, response) => {
             },
         });
 
-        // const order = new Order({
-        //     gigID: gig._id,
-        //     image: gig.cover,
-        //     title: gig.title,
-        //     buyerID: request.userID,
-        //     sellerID: gig.userID,
-        //     price: gig.price,
-        //     payment_intent: payment_intent.id
-        // });
-
         // await order.save();
         return response.send({
             error: false,
@@ -166,16 +156,6 @@ const createPayment = async (request, response) => {
             automatic_payment_methods: { enabled: true },
         });
 
-        // Save the order to the database
-        // const order = new Order({
-        //     buyerID: request.userID,
-        //     gigs: orderItems,
-        //     totalAmount,
-        //     payment_intent: paymentIntent.id
-        // });
-
-        // await order.save();
-
         return response.send({
             error: false,
             orderItems,
@@ -191,39 +171,6 @@ const createPayment = async (request, response) => {
         });
     }
 };
-
-// const createOrders = async (request, response) => {
-//     const { orderItems, paymentIntent, totalAmount } = request.body;
-
-//     try {
-//         if (paymentIntent) {
-            
-//             // Save the order to the database
-//             const order = new Order({
-//                 buyerID: request.userID,
-//                 gigs: orderItems,
-//                 totalAmount,
-//                 payment_intent: paymentIntent.id
-//             });
-
-//             await order.save();
-
-//         }
-
-//         await sendBuyerOrderConfirmationEmail();
-
-//         return response.send({
-//             error: false,
-//             message: "Congratulations! Payment got successful."
-//         });
-//     } catch ({ message, status = 500 }) {
-//         return response.status(status).send({
-//             error: true,
-//             message
-//         });
-//     }
-// };
-
 
 const transporter = nodemailer.createTransport({
     service: 'Gmail',
@@ -281,6 +228,15 @@ const createOrders = async (request, response) => {
                         transporter
                     );
                 }
+                const orderStatus = new OrderStatus({
+                    buyerID: request.userID,
+                    sellerID: gig.userID,
+                    status: "In Progress",
+                    orderID: order._id,
+                    gigID: gig._id
+                });
+
+                await orderStatus.save();
             }
         }
 

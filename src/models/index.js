@@ -4,7 +4,7 @@ const Gig = require('./gig.model');
 const Conversation = require('./conversation.model');
 const Order = require('./order.model');
 const Review = require('./review.model');
-
+const OrderStatus = require('./orderStatus.model');
 
 module.exports = {
     User,
@@ -12,5 +12,6 @@ module.exports = {
     Gig,
     Conversation,
     Order,
-    Review
+    Review,
+    OrderStatus
 }
