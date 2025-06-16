@@ -432,7 +432,7 @@ const authUpdatePassword = async (request, response) => {
 }
 
 const authUpdateProfile = async (request, response) => {
-    const { username, email, description, image } = request.body;
+    const { username, email, description, tagline, image } = request.body;
     try {
         const user = await User.findOne({ _id: request.userID }).select('-password');
         if (!user) {
@@ -454,6 +454,7 @@ const authUpdateProfile = async (request, response) => {
         user.username = username;
         user.description = description;
         user.image = image;
+        user.tagline = tagline;
         const updatedUser = await user.save();
 
         return response.status(200).send({

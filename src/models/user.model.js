@@ -43,6 +43,11 @@ const userSchema = new mongoose.Schema({
         type: String,
         required: false,
     },
+    tagline: {
+        type: String,
+        required: false,
+        default: null
+    },
     isSeller: {
         type: Boolean,
         default: false,
