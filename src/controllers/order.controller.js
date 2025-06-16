@@ -37,7 +37,7 @@ const getOrders = async (request, response) => {
 
 const getOrderDetailsById = async (request, response) => {
     try {
-        const { id } = request.params;
+        const { id, gig_id } = request.params;
 
         // Find order by ID and populate related fields
         const order = await Order.findById(id)
@@ -58,16 +58,55 @@ const getOrderDetailsById = async (request, response) => {
             return response.status(403).send({ error: true, message: 'Access denied' });
         }
 
+        const gig = await Gig.findById({ _id: gig_id })
+            .populate('userID', 'username country image createdAt email description');
+
+        if (!gig) {
+            throw CustomException('Gig not found!', 404);
+        }
+
+        // Get all relevant order status entries for this order
+        const orderStatuses = await OrderStatus.find({
+            orderID: order._doc._id,
+            deletedAt: null
+        }).lean();
+
+        // Add status to each gig
+        const enrichGigsWithStatus = (gig) => {
+            // gigs.map(gig => {
+                const status = orderStatuses.find(status =>
+                    status.gigID?.toString() === gig._id.toString()
+                );
+                if (status) {
+                    return {
+                        ...gig.toObject(),
+                        status: status ? status.status : 'Unknown'
+                    }
+                }
+                return {
+                    ...gig.toObject(),
+                };
+            // });
+        }
+
         // Filter out gigs not belonging to this seller (if not buyer)
         if (!isBuyer) {
+            // const sellerGigs = order.gigs.filter(gig => gig.sellerID._id.toString() === userId);
+            // console.log(sellerGigs, "sellerGigs");
             const filteredOrder = {
                 ...order._doc,
-                gigs: order.gigs.filter(gig => gig.sellerID._id.toString() === userId)
+                gig: enrichGigsWithStatus(gig)
             };
             return response.send(filteredOrder);
         }
 
-        return response.send(order);
+        // If buyer, return all gigs enriched
+        const fullOrder = {
+            ...order._doc,
+            gig: enrichGigsWithStatus(gig)
+        };
+
+        return response.send(fullOrder);
     } catch (err) {
         return response.status(err.status || 500).send({
             error: true,
@@ -215,6 +254,7 @@ const createOrders = async (request, response) => {
 
             // Send email to each Seller
             for (const gig of orderItems) {
+                console.log(gig, "gig details");
                 const seller = await User.findById(gig.sellerID); // assuming a User model exists
                 if (seller) {
                     await sendSellerOrderNotificationEmail(
@@ -230,10 +270,10 @@ const createOrders = async (request, response) => {
                 }
                 const orderStatus = new OrderStatus({
                     buyerID: request.userID,
-                    sellerID: gig.userID,
+                    sellerID: gig.sellerID,
                     status: "In Progress",
                     orderID: order._id,
-                    gigID: gig._id
+                    gigID: gig.gigID
                 });
 
                 await orderStatus.save();

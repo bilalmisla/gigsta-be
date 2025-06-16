@@ -11,7 +11,7 @@ const app = express.Router();
 app.get('/', userMiddleware, getOrders);
 
 // Get order details by ID
-app.get('/:id', userMiddleware, getOrderDetailsById);
+app.get('/:id/:gig_id', userMiddleware, getOrderDetailsById);
 
 // Payment
 app.post('/create-payment-intent/:_id', userMiddleware, paymentIntent);
