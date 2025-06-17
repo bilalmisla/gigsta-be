@@ -42,7 +42,7 @@ const getOrderDetailsById = async (request, response) => {
         // Find order by ID and populate related fields
         const order = await Order.findById(id)
             .populate('buyerID', 'username email image country')
-            .populate('gigs.sellerID', 'username email image country');
+            .populate('gigs.sellerID', 'username email image country isSeller');
 
         if (!order) {
             return response.status(404).send({ error: true, message: 'Order not found' });
@@ -59,7 +59,7 @@ const getOrderDetailsById = async (request, response) => {
         }
 
         const gig = await Gig.findById({ _id: gig_id })
-            .populate('userID', 'username country image createdAt email description');
+            .populate('userID', 'username country image createdAt email description isSeller');
 
         if (!gig) {
             throw CustomException('Gig not found!', 404);
@@ -73,20 +73,19 @@ const getOrderDetailsById = async (request, response) => {
 
         // Add status to each gig
         const enrichGigsWithStatus = (gig) => {
-            // gigs.map(gig => {
-                const status = orderStatuses.find(status =>
-                    status.gigID?.toString() === gig._id.toString()
-                );
-                if (status) {
-                    return {
-                        ...gig.toObject(),
-                        status: status ? status.status : 'Unknown'
-                    }
+            const status = orderStatuses.find(status =>
+                status.gigID?.toString() === gig._id.toString()
+            );
+            if (status) {
+                return {
+                    ...gig.toObject(),
+                    status: status.status
                 }
+            } else {
                 return {
                     ...gig.toObject(),
                 };
-            // });
+            }
         }
 
         // Filter out gigs not belonging to this seller (if not buyer)
