@@ -3,7 +3,7 @@ const { userMiddleware } = require('../middlewares');
 const { 
     getOrders, paymentIntent, updatePaymentStatus, 
     createOrders, createPayment, 
-    getOrderDetailsById 
+    getOrderDetailsById, updateOrderStatus 
 } = require('../controllers/order.controller');
 const app = express.Router();
 
@@ -21,6 +21,9 @@ app.patch('/', userMiddleware, updatePaymentStatus);
 
 // Payment confirm
 app.post('/create-payment', userMiddleware, createPayment);
+
+// Update order status based on Id
+app.post('/update-status', userMiddleware, updateOrderStatus);
 
 app.post('/create', userMiddleware, createOrders);
 

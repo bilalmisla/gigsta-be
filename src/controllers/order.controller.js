@@ -79,6 +79,7 @@ const getOrderDetailsById = async (request, response) => {
             if (status) {
                 return {
                     ...gig.toObject(),
+                    orderStatusDetails: status,
                     status: status.status
                 }
             } else {
@@ -292,6 +293,27 @@ const createOrders = async (request, response) => {
     }
 };
 
+const updateOrderStatus = async (req, res) => {
+    const { oStatusId, status } = req.body;
+
+    try {
+        // Find order by ID and populate related fields
+        const order = await OrderStatus.findById({ _id: oStatusId });
+        order.status = status;
+        await order.save();
+
+        return res.send({
+            error: false,
+            message: "Your order status has been changed."
+        });
+    } catch (error) {
+        return res.status(error.status || 500).send({
+            error: true,
+            message: error.message || 'Server error'
+        });
+    }
+};
+
 const updatePaymentStatus = async (request, response) => {
     const { payment_intent } = request.body;
 
@@ -321,6 +343,6 @@ const updatePaymentStatus = async (request, response) => {
 
 module.exports = {
     getOrders,
-    paymentIntent,
+    paymentIntent, updateOrderStatus,
     updatePaymentStatus, createPayment, createOrders, getOrderDetailsById
 }
