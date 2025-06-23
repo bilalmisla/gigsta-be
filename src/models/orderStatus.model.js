@@ -15,6 +15,11 @@ const orderStatusSchema = new mongoose.Schema({
         type: String,
         required: true,
     },
+    revisionRequestedCount: {
+        type: Number,
+        required: false,
+        default: 0
+    },
     orderID: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Order',

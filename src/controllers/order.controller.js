@@ -299,7 +299,11 @@ const updateOrderStatus = async (req, res) => {
     try {
         // Find order by ID and populate related fields
         const order = await OrderStatus.findById({ _id: oStatusId });
+        const gigFound = await Gig.findById({ _id: order.gigID });
         order.status = status;
+        if (status === "Revision Requested") {
+            order.revisionRequestedCount = order.revisionRequestedCount + 1;
+        }
         await order.save();
 
         return res.send({
