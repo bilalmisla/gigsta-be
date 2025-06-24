@@ -1,4 +1,4 @@
-const { User, Review, Order, Message, Conversation, Gig } = require('../models');
+const { User, Review, Order, Message, Conversation, Gig, OrderStatus } = require('../models');
 const { CustomException } = require('../utils');
 const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
@@ -665,8 +665,16 @@ const handleFetchProfile = async (req, res) => {
         }
 
         const gigs = await Gig.find({ userID: user._id }).populate('userID', 'username cover email description isSeller _id image');
+        let ordersCount;
+        if (user.isSeller) {
+            const orderStatuses = await OrderStatus.find({ sellerID: user._id, status: "Completed" });
+            ordersCount = orderStatuses.length;
+        } else {
+            const orderStatuses = await OrderStatus.find({ buyerID: user._id, status: "Completed" });
+            ordersCount = orderStatuses.length;
+        }
 
-        return res.status(200).json({ success: true, user, gigs });
+        return res.status(200).json({ success: true, user: { ...user._doc, ordersCompleted: ordersCount }, gigs });
     } catch (error) {
         return res.status(error.statusCode || 500).json({ success: false, message: error.message });
     }
