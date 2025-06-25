@@ -1,4 +1,4 @@
-const { Order, Gig, User } = require('../models');
+const { Order, Gig, User, OrderStatus } = require('../models');
 const { CustomException } = require('../utils');
 const { sendBuyerOrderConfirmationEmail, sendSellerOrderNotificationEmail } = require('../utils/emailTemplates');
 const stripe = require('stripe')(process.env.STRIPE_SECRET);
@@ -35,6 +35,86 @@ const getOrders = async (request, response) => {
     }
 }
 
+const getOrderDetailsById = async (request, response) => {
+    try {
+        const { id, gig_id } = request.params;
+
+        // Find order by ID and populate related fields
+        const order = await Order.findById(id)
+            .populate('buyerID', 'username email image country')
+            .populate('gigs.sellerID', 'username email image country isSeller');
+
+        if (!order) {
+            return response.status(404).send({ error: true, message: 'Order not found' });
+        }
+
+        const userId = request.userID;
+
+        // Check access: buyer or one of the sellers
+        const isBuyer = order.buyerID._id.toString() === userId;
+        const isSeller = order.gigs.some(gig => gig.sellerID._id.toString() === userId);
+
+        if (!isBuyer && !isSeller) {
+            return response.status(403).send({ error: true, message: 'Access denied' });
+        }
+
+        const gig = await Gig.findById({ _id: gig_id })
+            .populate('userID', 'username country image createdAt email description isSeller');
+
+        if (!gig) {
+            throw CustomException('Gig not found!', 404);
+        }
+
+        // Get all relevant order status entries for this order
+        const orderStatuses = await OrderStatus.find({
+            orderID: order._doc._id,
+            deletedAt: null
+        }).lean();
+
+        // Add status to each gig
+        const enrichGigsWithStatus = (gig) => {
+            const status = orderStatuses.find(status =>
+                status.gigID?.toString() === gig._id.toString()
+            );
+            if (status) {
+                return {
+                    ...gig.toObject(),
+                    orderStatusDetails: status,
+                    status: status.status
+                }
+            } else {
+                return {
+                    ...gig.toObject(),
+                };
+            }
+        }
+
+        // Filter out gigs not belonging to this seller (if not buyer)
+        if (!isBuyer) {
+            // const sellerGigs = order.gigs.filter(gig => gig.sellerID._id.toString() === userId);
+            // console.log(sellerGigs, "sellerGigs");
+            const filteredOrder = {
+                ...order._doc,
+                gig: enrichGigsWithStatus(gig)
+            };
+            return response.send(filteredOrder);
+        }
+
+        // If buyer, return all gigs enriched
+        const fullOrder = {
+            ...order._doc,
+            gig: enrichGigsWithStatus(gig)
+        };
+
+        return response.send(fullOrder);
+    } catch (err) {
+        return response.status(err.status || 500).send({
+            error: true,
+            message: err.message || 'Server error'
+        });
+    }
+};
+
 const paymentIntent = async (request, response) => {
     const { _id } = request.params;
 
@@ -48,16 +128,6 @@ const paymentIntent = async (request, response) => {
                 enabled: true,
             },
         });
-
-        // const order = new Order({
-        //     gigID: gig._id,
-        //     image: gig.cover,
-        //     title: gig.title,
-        //     buyerID: request.userID,
-        //     sellerID: gig.userID,
-        //     price: gig.price,
-        //     payment_intent: payment_intent.id
-        // });
 
         // await order.save();
         return response.send({
@@ -125,16 +195,6 @@ const createPayment = async (request, response) => {
             automatic_payment_methods: { enabled: true },
         });
 
-        // Save the order to the database
-        // const order = new Order({
-        //     buyerID: request.userID,
-        //     gigs: orderItems,
-        //     totalAmount,
-        //     payment_intent: paymentIntent.id
-        // });
-
-        // await order.save();
-
         return response.send({
             error: false,
             orderItems,
@@ -150,39 +210,6 @@ const createPayment = async (request, response) => {
         });
     }
 };
-
-// const createOrders = async (request, response) => {
-//     const { orderItems, paymentIntent, totalAmount } = request.body;
-
-//     try {
-//         if (paymentIntent) {
-            
-//             // Save the order to the database
-//             const order = new Order({
-//                 buyerID: request.userID,
-//                 gigs: orderItems,
-//                 totalAmount,
-//                 payment_intent: paymentIntent.id
-//             });
-
-//             await order.save();
-
-//         }
-
-//         await sendBuyerOrderConfirmationEmail();
-
-//         return response.send({
-//             error: false,
-//             message: "Congratulations! Payment got successful."
-//         });
-//     } catch ({ message, status = 500 }) {
-//         return response.status(status).send({
-//             error: true,
-//             message
-//         });
-//     }
-// };
-
 
 const transporter = nodemailer.createTransport({
     service: 'Gmail',
@@ -227,6 +254,7 @@ const createOrders = async (request, response) => {
 
             // Send email to each Seller
             for (const gig of orderItems) {
+                console.log(gig, "gig details");
                 const seller = await User.findById(gig.sellerID); // assuming a User model exists
                 if (seller) {
                     await sendSellerOrderNotificationEmail(
@@ -240,6 +268,15 @@ const createOrders = async (request, response) => {
                         transporter
                     );
                 }
+                const orderStatus = new OrderStatus({
+                    buyerID: request.userID,
+                    sellerID: gig.sellerID,
+                    status: "In Progress",
+                    orderID: order._id,
+                    gigID: gig.gigID
+                });
+
+                await orderStatus.save();
             }
         }
 
@@ -252,6 +289,31 @@ const createOrders = async (request, response) => {
         return response.status(status).send({
             error: true,
             message
+        });
+    }
+};
+
+const updateOrderStatus = async (req, res) => {
+    const { oStatusId, status } = req.body;
+
+    try {
+        // Find order by ID and populate related fields
+        const order = await OrderStatus.findById({ _id: oStatusId });
+        const gigFound = await Gig.findById({ _id: order.gigID });
+        order.status = status;
+        if (status === "Revision Requested") {
+            order.revisionRequestedCount = order.revisionRequestedCount + 1;
+        }
+        await order.save();
+
+        return res.send({
+            error: false,
+            message: "Your order status has been changed."
+        });
+    } catch (error) {
+        return res.status(error.status || 500).send({
+            error: true,
+            message: error.message || 'Server error'
         });
     }
 };
@@ -285,6 +347,6 @@ const updatePaymentStatus = async (request, response) => {
 
 module.exports = {
     getOrders,
-    paymentIntent,
-    updatePaymentStatus, createPayment, createOrders
+    paymentIntent, updateOrderStatus,
+    updatePaymentStatus, createPayment, createOrders, getOrderDetailsById
 }
