@@ -3,6 +3,38 @@ const { CustomException } = require('../utils');
 const { sendBuyerOrderConfirmationEmail, sendSellerOrderNotificationEmail } = require('../utils/emailTemplates');
 const stripe = require('stripe')(process.env.STRIPE_SECRET);
 const nodemailer = require('nodemailer');
+const { sendOrderStatusEmail } = require('../utils/sendOrderStatusEmail');
+
+// const getOrders = async (request, response) => {
+//     try {
+//         const orders = await Order.find({
+//             $or: [
+//                 { buyerID: request.userID },
+//                 { gigs: { $elemMatch: { sellerID: request.userID } } }
+//             ]
+//         })
+//         .populate('buyerID', 'username email image country')
+//         .populate('gigs.sellerID', 'username email image country');
+
+//         const updatedOrders = orders.map((item, index) => {
+//             if (item._doc.buyerID._id.toString() === request.userID) {
+//                 return item;
+//             }
+//             return {
+//                 ...item._doc,
+//                 gigs: item._doc.gigs.filter((gig, index) => gig._doc.sellerID._id.toString() === request.userID)
+//             };
+//         });
+
+//         return response.send(updatedOrders);
+//     }
+//     catch ({ message, status = 500 }) {
+//         return response.send({
+//             error: true,
+//             message
+//         })
+//     }
+// }
 
 const getOrders = async (request, response) => {
     try {
@@ -12,26 +44,51 @@ const getOrders = async (request, response) => {
                 { gigs: { $elemMatch: { sellerID: request.userID } } }
             ]
         })
-        .populate('buyerID', 'username email image country')
-        .populate('gigs.sellerID', 'username email image country');
+            .populate('buyerID', 'username email image country')
+            .populate('gigs.sellerID', 'username email image country');
 
-        const updatedOrders = orders.map((item, index) => {
+        // Filter gigs for sellers
+        const updatedOrders = orders.map(item => {
             if (item._doc.buyerID._id.toString() === request.userID) {
-                return item;
+                return item._doc;
             }
             return {
                 ...item._doc,
-                gigs: item._doc.gigs.filter((gig, index) => gig._doc.sellerID._id.toString() === request.userID)
+                gigs: item._doc.gigs.filter(gig => gig._doc.sellerID._id.toString() === request.userID)
             };
         });
 
-        return response.send(updatedOrders);
-    }
-    catch ({ message, status = 500 }) {
-        return response.send({
-            error: true,
-            message
+        // Fetch relevant OrderStatus documents
+        const orderIDs = updatedOrders.map(order => order._id);
+        const orderStatuses = await OrderStatus.find({
+            orderID: { $in: orderIDs }
         })
+            .populate('buyerID', 'username email image country')
+            .populate('sellerID', 'username email image country')
+            .populate('gigID', 'title price') // adjust fields as needed
+            .lean();
+
+        // Group statuses by orderID
+        const statusesMap = {};
+        orderStatuses.forEach(status => {
+            const key = status.orderID.toString();
+            if (!statusesMap[key]) statusesMap[key] = [];
+            statusesMap[key].push(status);
+        });
+
+        // Attach statuses to each order
+        const enrichedOrders = updatedOrders.map(order => ({
+            ...order,
+            orderStatuses: statusesMap[order._id.toString()] || []
+        }));
+
+        return response.send(enrichedOrders);
+    }
+    catch (error) {
+        return response.status(500).send({
+            error: true,
+            message: error.message
+        });
     }
 }
 
@@ -148,7 +205,7 @@ const paymentIntent = async (request, response) => {
         })
 
     }
-    catch({message, status = 500}) {
+    catch ({ message, status = 500 }) {
         return response.send({
             error: true,
             message
@@ -172,7 +229,7 @@ const createPayment = async (request, response) => {
             if (!gig) {
                 throw CustomException(`Gig with ID ${item.gigID} not found`, 404);
             }
-            
+
             let itemTotal = gig.price * item.quantity;
             totalAmount += itemTotal;
 
@@ -214,8 +271,8 @@ const createPayment = async (request, response) => {
 const transporter = nodemailer.createTransport({
     service: 'Gmail',
     auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
     }
 });
 
@@ -297,23 +354,45 @@ const updateOrderStatus = async (req, res) => {
     const { oStatusId, status } = req.body;
 
     try {
-        // Find order by ID and populate related fields
-        const order = await OrderStatus.findById({ _id: oStatusId });
-        const gigFound = await Gig.findById({ _id: order.gigID });
+        // Fetch order
+        const order = await OrderStatus.findById({ _id: oStatusId }).populate('buyerID', '_id username email image isSeller');
+        if (!order) {
+            return res.status(404).send({ error: true, message: 'Order not found.' });
+        }
+
+        // Fetch related gig with buyer and seller populated
+        const gigFound = await Gig.findById({ _id: order.gigID }).populate('userID');
+        if (!gigFound) {
+            return res.status(404).send({ error: true, message: 'Gig not found.' });
+        }
+
+        const user = await User.findById(req.userID);
+        // Update status
         order.status = status;
         if (status === "Revision Requested") {
-            order.revisionRequestedCount = order.revisionRequestedCount + 1;
+            order.revisionRequestedCount += 1;
         }
         await order.save();
 
+        // Send notification email to counterparty
+        await sendOrderStatusEmail(
+            user,
+            gigFound.userID,
+            gigFound.title,
+            status,
+            gigFound._id // or order._id based on your frontend routing
+        );
+
         return res.send({
             error: false,
-            message: "Your order status has been changed."
+            message: "Order status updated successfully. Counterparty has been notified."
         });
+
     } catch (error) {
-        return res.status(error.status || 500).send({
+        console.error('Error updating order status:', error);
+        return res.status(500).send({
             error: true,
-            message: error.message || 'Server error'
+            message: error.message || 'Internal server error.'
         });
     }
 };
