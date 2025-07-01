@@ -45,7 +45,7 @@ const getOrders = async (request, response) => {
             ]
         })
             .populate('buyerID', 'username email image country')
-            .populate('gigs.sellerID', 'username email image country');
+            .populate('gigs.sellerID', 'username email image country').sort({ createdAt: -1 });
 
         // Filter gigs for sellers
         const updatedOrders = orders.map(item => {
@@ -126,24 +126,28 @@ const getOrderDetailsById = async (request, response) => {
         const orderStatuses = await OrderStatus.find({
             orderID: order._doc._id,
             deletedAt: null
-        }).lean();
+        }).sort({ createdAt: -1 }).lean();
+        const currentStatus = await OrderStatus.findOne({
+            orderID: order._doc._id,
+            deletedAt: null
+        }).sort({ createdAt: -1 });
 
         // Add status to each gig
         const enrichGigsWithStatus = (gig) => {
-            const status = orderStatuses.find(status =>
-                status.gigID?.toString() === gig._id.toString()
-            );
-            if (status) {
-                return {
-                    ...gig.toObject(),
-                    orderStatusDetails: status,
-                    status: status.status
-                }
-            } else {
+            // const status = orderStatuses.find(status =>
+            //     status.gigID?.toString() === gig._id.toString()
+            // );
+            // if (status) {
+            //     return {
+            //         ...gig.toObject(),
+            //         orderStatusDetails: status,
+            //         status: status.status
+            //     }
+            // } else {
                 return {
                     ...gig.toObject(),
                 };
-            }
+            // }
         }
 
         // Filter out gigs not belonging to this seller (if not buyer)
@@ -152,7 +156,9 @@ const getOrderDetailsById = async (request, response) => {
             // console.log(sellerGigs, "sellerGigs");
             const filteredOrder = {
                 ...order._doc,
-                gig: enrichGigsWithStatus(gig)
+                gig: enrichGigsWithStatus(gig),
+                orderStatuses: orderStatuses,
+                currentStatus: currentStatus
             };
             return response.send(filteredOrder);
         }
@@ -160,7 +166,9 @@ const getOrderDetailsById = async (request, response) => {
         // If buyer, return all gigs enriched
         const fullOrder = {
             ...order._doc,
-            gig: enrichGigsWithStatus(gig)
+            gig: enrichGigsWithStatus(gig),
+            orderStatuses: orderStatuses,
+            currentStatus: currentStatus
         };
 
         return response.send(fullOrder);
@@ -351,28 +359,38 @@ const createOrders = async (request, response) => {
 };
 
 const updateOrderStatus = async (req, res) => {
-    const { oStatusId, status } = req.body;
+    const { buyerID, sellerID, status, orderID, gigID } = req.body;
 
     try {
-        // Fetch order
-        const order = await OrderStatus.findById({ _id: oStatusId }).populate('buyerID', '_id username email image isSeller');
-        if (!order) {
-            return res.status(404).send({ error: true, message: 'Order not found.' });
-        }
-
         // Fetch related gig with buyer and seller populated
-        const gigFound = await Gig.findById({ _id: order.gigID }).populate('userID');
+        const gigFound = await Gig.findById({ _id: gigID }).populate('userID');
         if (!gigFound) {
             return res.status(404).send({ error: true, message: 'Gig not found.' });
         }
 
         const user = await User.findById(req.userID);
+        // console.log(user, "user");
         // Update status
-        order.status = status;
+        let orderStatus;
         if (status === "Revision Requested") {
-            order.revisionRequestedCount += 1;
+            orderStatus = new OrderStatus({
+                buyerID: buyerID,
+                sellerID: sellerID,
+                status: status,
+                orderID: orderID,
+                gigID: gigID
+            });
+            orderStatus.revisionRequestedCount += 1;
+        } else {
+            orderStatus = new OrderStatus({
+                buyerID: buyerID,
+                sellerID: sellerID,
+                status: status,
+                orderID: orderID,
+                gigID: gigID
+            });
         }
-        await order.save();
+        await orderStatus.save();
 
         // Send notification email to counterparty
         await sendOrderStatusEmail(
@@ -385,7 +403,7 @@ const updateOrderStatus = async (req, res) => {
 
         return res.send({
             error: false,
-            message: "Order status updated successfully. Counterparty has been notified."
+            message: "Order status updated successfully."
         });
 
     } catch (error) {
