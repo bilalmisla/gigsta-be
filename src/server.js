@@ -7,7 +7,11 @@ const connect = require('./configs/db');
 const PORT = 8080;
 
 // Other Route files
-const { userRoute, conversationRoute, gigRoute, messageRoute, orderRoute, reviewRoute, authRoute, contactRoute } = require('./routes');
+const { 
+    userRoute, conversationRoute, gigRoute, messageRoute, 
+    orderRoute, reviewRoute, authRoute, contactRoute 
+} = require('./routes');
+const { OrderStatus } = require('./models');
 
 // App
 const app = express();
@@ -18,7 +22,7 @@ app.use(express.json());
 app.use(cookieParser());
 app.use(compression());
 app.use(cors({
-    origin: ['http://localhost:5173', 'https://gigsta.ai', 'https://gigstafrontend.netlify.app'],
+    origin: ['http://localhost:5173', 'https://gigsta.ai', 'https://gigstafrontend.netlify.app', 'https://staging.gigsta.ai'],
     credentials: true
 }));
 
@@ -31,6 +35,13 @@ app.use('/api/orders', orderRoute);
 app.use('/api/messages', messageRoute);
 app.use('/api/reviews', reviewRoute);
 app.use('/api/submit-form', contactRoute);
+
+// const updateAllRecords = async () => {
+//     const result = await OrderStatus.updateMany({}, { $set: { revisionRequestedCount: 0 } });
+//     console.log('Documents updated:', result.modifiedCount);
+// };
+
+// updateAllRecords();
 
 // Routes
 app.get('/', (request, response) => {

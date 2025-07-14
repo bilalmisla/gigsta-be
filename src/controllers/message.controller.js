@@ -81,8 +81,10 @@ const createMessage = async (request, response) => {
 const getMessages = async (request, response) => {
   const { conversationID } = request.params;
   try {
+    const conversation = await Conversation.findOne({ conversationID: conversationID })
+      .populate('sellerID', 'username image email').populate('buyerID', 'username image email');
     const messages = await Message.find({ conversationID }).populate('userID', 'username image email');
-    return response.send(messages);
+    return response.send({ data: messages, conversation });
   }
   catch ({ message, status = 500 }) {
     return response.status(status).send({

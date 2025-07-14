@@ -1,8 +1,40 @@
-const { Order, Gig, User } = require('../models');
+const { Order, Gig, User, OrderStatus } = require('../models');
 const { CustomException } = require('../utils');
 const { sendBuyerOrderConfirmationEmail, sendSellerOrderNotificationEmail } = require('../utils/emailTemplates');
 const stripe = require('stripe')(process.env.STRIPE_SECRET);
 const nodemailer = require('nodemailer');
+const { sendOrderStatusEmail } = require('../utils/sendOrderStatusEmail');
+
+// const getOrders = async (request, response) => {
+//     try {
+//         const orders = await Order.find({
+//             $or: [
+//                 { buyerID: request.userID },
+//                 { gigs: { $elemMatch: { sellerID: request.userID } } }
+//             ]
+//         })
+//         .populate('buyerID', 'username email image country')
+//         .populate('gigs.sellerID', 'username email image country');
+
+//         const updatedOrders = orders.map((item, index) => {
+//             if (item._doc.buyerID._id.toString() === request.userID) {
+//                 return item;
+//             }
+//             return {
+//                 ...item._doc,
+//                 gigs: item._doc.gigs.filter((gig, index) => gig._doc.sellerID._id.toString() === request.userID)
+//             };
+//         });
+
+//         return response.send(updatedOrders);
+//     }
+//     catch ({ message, status = 500 }) {
+//         return response.send({
+//             error: true,
+//             message
+//         })
+//     }
+// }
 
 const getOrders = async (request, response) => {
     try {
@@ -12,28 +44,141 @@ const getOrders = async (request, response) => {
                 { gigs: { $elemMatch: { sellerID: request.userID } } }
             ]
         })
-        .populate('buyerID', 'username email image country')
-        .populate('gigs.sellerID', 'username email image country');
+            .populate('buyerID', 'username email image country')
+            .populate('gigs.sellerID', 'username email image country').sort({ createdAt: -1 });
 
-        const updatedOrders = orders.map((item, index) => {
+        // Filter gigs for sellers
+        const updatedOrders = orders.map(item => {
             if (item._doc.buyerID._id.toString() === request.userID) {
-                return item;
+                return item._doc;
             }
             return {
                 ...item._doc,
-                gigs: item._doc.gigs.filter((gig, index) => gig._doc.sellerID._id.toString() === request.userID)
+                gigs: item._doc.gigs.filter(gig => gig._doc.sellerID._id.toString() === request.userID)
             };
         });
 
-        return response.send(updatedOrders);
-    }
-    catch ({ message, status = 500 }) {
-        return response.send({
-            error: true,
-            message
+        // Fetch relevant OrderStatus documents
+        const orderIDs = updatedOrders.map(order => order._id);
+        const orderStatuses = await OrderStatus.find({
+            orderID: { $in: orderIDs }
         })
+            .populate('buyerID', 'username email image country')
+            .populate('sellerID', 'username email image country')
+            .populate('gigID', 'title price') // adjust fields as needed
+            .lean();
+
+        // Group statuses by orderID
+        const statusesMap = {};
+        orderStatuses.forEach(status => {
+            const key = status.orderID.toString();
+            if (!statusesMap[key]) statusesMap[key] = [];
+            statusesMap[key].push(status);
+        });
+
+        // Attach statuses to each order
+        const enrichedOrders = updatedOrders.map(order => ({
+            ...order,
+            orderStatuses: statusesMap[order._id.toString()] || []
+        }));
+
+        return response.send(enrichedOrders);
+    }
+    catch (error) {
+        return response.status(500).send({
+            error: true,
+            message: error.message
+        });
     }
 }
+
+const getOrderDetailsById = async (request, response) => {
+    try {
+        const { id, gig_id } = request.params;
+
+        // Find order by ID and populate related fields
+        const order = await Order.findById(id)
+            .populate('buyerID', 'username email image country')
+            .populate('gigs.sellerID', 'username email image country isSeller');
+
+        if (!order) {
+            return response.status(404).send({ error: true, message: 'Order not found' });
+        }
+
+        const userId = request.userID;
+
+        // Check access: buyer or one of the sellers
+        const isBuyer = order.buyerID._id.toString() === userId;
+        const isSeller = order.gigs.some(gig => gig.sellerID._id.toString() === userId);
+
+        if (!isBuyer && !isSeller) {
+            return response.status(403).send({ error: true, message: 'Access denied' });
+        }
+
+        const gig = await Gig.findById({ _id: gig_id })
+            .populate('userID', 'username country image createdAt email description isSeller');
+
+        if (!gig) {
+            throw CustomException('Gig not found!', 404);
+        }
+
+        // Get all relevant order status entries for this order
+        const orderStatuses = await OrderStatus.find({
+            orderID: order._doc._id,
+            deletedAt: null
+        }).sort({ createdAt: -1 }).lean();
+        const currentStatus = await OrderStatus.findOne({
+            orderID: order._doc._id,
+            deletedAt: null
+        }).sort({ createdAt: -1 });
+
+        // Add status to each gig
+        const enrichGigsWithStatus = (gig) => {
+            // const status = orderStatuses.find(status =>
+            //     status.gigID?.toString() === gig._id.toString()
+            // );
+            // if (status) {
+            //     return {
+            //         ...gig.toObject(),
+            //         orderStatusDetails: status,
+            //         status: status.status
+            //     }
+            // } else {
+                return {
+                    ...gig.toObject(),
+                };
+            // }
+        }
+
+        // Filter out gigs not belonging to this seller (if not buyer)
+        if (!isBuyer) {
+            // const sellerGigs = order.gigs.filter(gig => gig.sellerID._id.toString() === userId);
+            // console.log(sellerGigs, "sellerGigs");
+            const filteredOrder = {
+                ...order._doc,
+                gig: enrichGigsWithStatus(gig),
+                orderStatuses: orderStatuses,
+                currentStatus: currentStatus
+            };
+            return response.send(filteredOrder);
+        }
+
+        // If buyer, return all gigs enriched
+        const fullOrder = {
+            ...order._doc,
+            gig: enrichGigsWithStatus(gig),
+            orderStatuses: orderStatuses,
+            currentStatus: currentStatus
+        };
+
+        return response.send(fullOrder);
+    } catch (err) {
+        return response.status(err.status || 500).send({
+            error: true,
+            message: err.message || 'Server error'
+        });
+    }
+};
 
 const paymentIntent = async (request, response) => {
     const { _id } = request.params;
@@ -48,16 +193,6 @@ const paymentIntent = async (request, response) => {
                 enabled: true,
             },
         });
-
-        // const order = new Order({
-        //     gigID: gig._id,
-        //     image: gig.cover,
-        //     title: gig.title,
-        //     buyerID: request.userID,
-        //     sellerID: gig.userID,
-        //     price: gig.price,
-        //     payment_intent: payment_intent.id
-        // });
 
         // await order.save();
         return response.send({
@@ -78,7 +213,7 @@ const paymentIntent = async (request, response) => {
         })
 
     }
-    catch({message, status = 500}) {
+    catch ({ message, status = 500 }) {
         return response.send({
             error: true,
             message
@@ -102,7 +237,7 @@ const createPayment = async (request, response) => {
             if (!gig) {
                 throw CustomException(`Gig with ID ${item.gigID} not found`, 404);
             }
-            
+
             let itemTotal = gig.price * item.quantity;
             totalAmount += itemTotal;
 
@@ -125,16 +260,6 @@ const createPayment = async (request, response) => {
             automatic_payment_methods: { enabled: true },
         });
 
-        // Save the order to the database
-        // const order = new Order({
-        //     buyerID: request.userID,
-        //     gigs: orderItems,
-        //     totalAmount,
-        //     payment_intent: paymentIntent.id
-        // });
-
-        // await order.save();
-
         return response.send({
             error: false,
             orderItems,
@@ -151,44 +276,11 @@ const createPayment = async (request, response) => {
     }
 };
 
-// const createOrders = async (request, response) => {
-//     const { orderItems, paymentIntent, totalAmount } = request.body;
-
-//     try {
-//         if (paymentIntent) {
-            
-//             // Save the order to the database
-//             const order = new Order({
-//                 buyerID: request.userID,
-//                 gigs: orderItems,
-//                 totalAmount,
-//                 payment_intent: paymentIntent.id
-//             });
-
-//             await order.save();
-
-//         }
-
-//         await sendBuyerOrderConfirmationEmail();
-
-//         return response.send({
-//             error: false,
-//             message: "Congratulations! Payment got successful."
-//         });
-//     } catch ({ message, status = 500 }) {
-//         return response.status(status).send({
-//             error: true,
-//             message
-//         });
-//     }
-// };
-
-
 const transporter = nodemailer.createTransport({
     service: 'Gmail',
     auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
     }
 });
 
@@ -227,6 +319,7 @@ const createOrders = async (request, response) => {
 
             // Send email to each Seller
             for (const gig of orderItems) {
+                console.log(gig, "gig details");
                 const seller = await User.findById(gig.sellerID); // assuming a User model exists
                 if (seller) {
                     await sendSellerOrderNotificationEmail(
@@ -240,6 +333,15 @@ const createOrders = async (request, response) => {
                         transporter
                     );
                 }
+                const orderStatus = new OrderStatus({
+                    buyerID: request.userID,
+                    sellerID: gig.sellerID,
+                    status: "In Progress",
+                    orderID: order._id,
+                    gigID: gig.gigID
+                });
+
+                await orderStatus.save();
             }
         }
 
@@ -252,6 +354,63 @@ const createOrders = async (request, response) => {
         return response.status(status).send({
             error: true,
             message
+        });
+    }
+};
+
+const updateOrderStatus = async (req, res) => {
+    const { buyerID, sellerID, status, orderID, gigID } = req.body;
+
+    try {
+        // Fetch related gig with buyer and seller populated
+        const gigFound = await Gig.findById({ _id: gigID }).populate('userID');
+        if (!gigFound) {
+            return res.status(404).send({ error: true, message: 'Gig not found.' });
+        }
+
+        const user = await User.findById(req.userID);
+        // console.log(user, "user");
+        // Update status
+        let orderStatus;
+        if (status === "Revision Requested") {
+            orderStatus = new OrderStatus({
+                buyerID: buyerID,
+                sellerID: sellerID,
+                status: status,
+                orderID: orderID,
+                gigID: gigID
+            });
+            orderStatus.revisionRequestedCount += 1;
+        } else {
+            orderStatus = new OrderStatus({
+                buyerID: buyerID,
+                sellerID: sellerID,
+                status: status,
+                orderID: orderID,
+                gigID: gigID
+            });
+        }
+        await orderStatus.save();
+
+        // Send notification email to counterparty
+        await sendOrderStatusEmail(
+            user,
+            gigFound.userID,
+            gigFound.title,
+            status,
+            gigFound._id // or order._id based on your frontend routing
+        );
+
+        return res.send({
+            error: false,
+            message: "Order status updated successfully."
+        });
+
+    } catch (error) {
+        console.error('Error updating order status:', error);
+        return res.status(500).send({
+            error: true,
+            message: error.message || 'Internal server error.'
         });
     }
 };
@@ -285,6 +444,6 @@ const updatePaymentStatus = async (request, response) => {
 
 module.exports = {
     getOrders,
-    paymentIntent,
-    updatePaymentStatus, createPayment, createOrders
+    paymentIntent, updateOrderStatus,
+    updatePaymentStatus, createPayment, createOrders, getOrderDetailsById
 }
