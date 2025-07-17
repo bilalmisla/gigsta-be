@@ -442,8 +442,71 @@ const updatePaymentStatus = async (request, response) => {
     }
 };
 
+const getEarningStats = async (request, response) => {
+    try {
+        const user = await User.findById(request.userID);
+        if (!user.isSeller) {
+            return response.status(403).send({ error: true, message: 'Only sellers can view earnings stats.' });
+        }
+
+        // 1. Find all OrderStatus for this seller
+        const orderStatuses = await OrderStatus.find({ sellerID: user._id, deletedAt: null });
+
+        // 2. Group by orderID+gigID to get latest status for each gig in each order
+        const latestStatusMap = {};
+        orderStatuses.forEach(status => {
+            const key = `${status.orderID}_${status.gigID}`;
+            if (!latestStatusMap[key] || new Date(status.createdAt) > new Date(latestStatusMap[key].createdAt)) {
+                latestStatusMap[key] = status;
+            }
+        });
+
+        // 3. For each, get the corresponding order and gig info for price
+        let availableFunds = 0;
+        let futurePayments = 0;
+        let totalEarnings = 0;
+
+        // We'll need to fetch all relevant orders in one go for efficiency
+        const orderIDs = Array.from(new Set(Object.values(latestStatusMap).map(s => s.orderID)));
+        const orders = await Order.find({ _id: { $in: orderIDs } });
+        const orderMap = {};
+        orders.forEach(order => { orderMap[order._id.toString()] = order; });
+
+        Object.values(latestStatusMap).forEach(status => {
+            const order = orderMap[status.orderID?.toString()];
+            if (!order) return;
+            // Find the gig in the order's gigs array
+            const gigItem = order.gigs.find(g => g.gigID.toString() === status.gigID.toString() && g.sellerID.toString() === user._id.toString());
+            if (!gigItem) return;
+            const amount = gigItem.total || gigItem.price || 0;
+            if (status.status === 'Completed') {
+                availableFunds += amount;
+                totalEarnings += amount;
+            } else {
+            // else if (status.status === 'In Progress') {
+                futurePayments += amount;
+            }
+        });
+
+        // Total earnings is all completed orders since joined (regardless of withdrawal)
+        // If you add withdrawal logic in the future, subtract withdrawn from availableFunds
+
+        return response.send({
+            availableFunds,
+            futurePayments,
+            totalEarnings
+        });
+    } catch (error) {
+        return response.status(500).send({
+            error: true,
+            message: error.message || 'Internal server error.'
+        });
+    }
+};
+
 module.exports = {
     getOrders,
     paymentIntent, updateOrderStatus,
-    updatePaymentStatus, createPayment, createOrders, getOrderDetailsById
+    updatePaymentStatus, createPayment, createOrders, getOrderDetailsById,
+    getEarningStats // <-- export new method
 }
