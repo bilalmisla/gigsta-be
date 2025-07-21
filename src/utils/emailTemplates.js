@@ -78,6 +78,61 @@ const sendSellerOrderNotificationEmail = async (
   await transporter.sendMail(mailOptions);
 };
 
+// 3️⃣ Send email to Seller when withdrawal is requested
+const sendSellerWithdrawalNotificationEmail = async (
+    email,
+    sellerName,
+    amount,
+    status,
+    requestedAt,
+    transporter
+) => {
+  const dashboardLink = `${process.env.FRONTEND_URL}/seller/withdrawals`;
+  const mailOptions = {
+    from: `"Gigsta AI" <${process.env.EMAIL_USER}>`,
+    to: email,
+    subject: `💸 Withdrawal Request Received` ,
+    html: `
+            <p><strong>Hi ${sellerName},</strong></p>
+            <p>We have received your withdrawal request on <strong>${new Date(requestedAt).toLocaleString()}</strong>.</p>
+            <ul>
+                <li><strong>Amount:</strong> $${amount}</li>
+                <li><strong>Status:</strong> ${status}</li>
+            </ul>
+            <p>You can track the status of your withdrawal in your dashboard:</p>
+            <p><a href="${dashboardLink}" target="_blank">View Withdrawals</a></p>
+            <p>Thank you for using Gigsta!</p>
+            <p>Best regards,<br />Gigsta Team</p>
+        `
+  };
+  await transporter.sendMail(mailOptions);
+};
+
+// 4️⃣ Send email to Seller when withdrawal is approved or rejected
+const sendSellerWithdrawalStatusUpdateEmail = async (
+    email,
+    sellerName,
+    amount,
+    status,
+    processedAt,
+    transporter
+) => {
+  const dashboardLink = `${process.env.FRONTEND_URL}/seller/withdrawals`;
+  const mailOptions = {
+    from: `"Gigsta AI" <${process.env.EMAIL_USER}>`,
+    to: email,
+    subject: `Withdrawal ${status === 'Approved' ? 'Approved' : 'Rejected'}`,
+    html: `
+            <p><strong>Hi ${sellerName},</strong></p>
+            <p>Your withdrawal request for <strong>$${amount}</strong> has been <strong>${status}</strong> on <strong>${new Date(processedAt).toLocaleString()}</strong>.</p>
+            <p>You can view the details in your dashboard:</p>
+            <p><a href="${dashboardLink}" target="_blank">View Withdrawals</a></p>
+            <p>Best regards,<br />Gigsta Team</p>
+        `
+  };
+  await transporter.sendMail(mailOptions);
+};
+
 function generateEmailTemplate(data) {
   const {
     logoUrl,
@@ -236,5 +291,6 @@ function generateEmailTemplate(data) {
 }
 
 module.exports = {
-    sendBuyerOrderConfirmationEmail, sendSellerOrderNotificationEmail, generateEmailTemplate
+    sendBuyerOrderConfirmationEmail, sendSellerOrderNotificationEmail, generateEmailTemplate,
+    sendSellerWithdrawalNotificationEmail, sendSellerWithdrawalStatusUpdateEmail
 }

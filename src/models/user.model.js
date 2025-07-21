@@ -57,6 +57,11 @@ const userSchema = new mongoose.Schema({
         type: Boolean, 
         default: false 
     },
+    stripeAccountId: {
+        type: String,
+        required: false
+    },
+    stripeCustomerId: { type: String },
     deletedAt: { // Add this field for soft deletion
         type: Date,
         default: null
