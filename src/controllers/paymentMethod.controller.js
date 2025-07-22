@@ -9,8 +9,8 @@ const addIbanPaymentMethod = async (req, res) => {
             return res.status(403).send({ error: true, message: 'Only sellers can add payment methods.' });
         }
 
-        const { iban, account_holder_name, country, currency } = req.body;
-        if (!iban || !account_holder_name || !country || !currency) {
+        const { iban, accountHolderName, country, currency } = req.body;
+        if (!iban || !accountHolderName || !currency || !country) {
             return res.status(400).send({ error: true, message: 'Missing required fields.' });
         }
 
@@ -29,7 +29,7 @@ const addIbanPaymentMethod = async (req, res) => {
             type: 'sepa_debit',
             sepa_debit: { iban },
             billing_details: {
-                name: account_holder_name,
+                name: accountHolderName,
                 email: user.email
             }
         });
@@ -45,10 +45,10 @@ const addIbanPaymentMethod = async (req, res) => {
             stripeCustomerId: user.stripeCustomerId,
             stripePaymentMethodId: paymentMethod.id,
             iban,
-            account_holder_name,
+            accountHolderName,
             country,
             currency,
-            bank_name: paymentMethod.sepa_debit.bank_code || '',
+            bankName: paymentMethod.sepa_debit.bank_code || '',
             last4: paymentMethod.sepa_debit.last4,
             status: paymentMethod.sepa_debit.status // 'new', 'validated', etc.
         });
