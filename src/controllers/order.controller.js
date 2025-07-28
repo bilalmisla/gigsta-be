@@ -443,108 +443,108 @@ const updatePaymentStatus = async (request, response) => {
 };
 
 // POST /orders/withdraw
-const requestWithdrawal = async (req, res) => {
-    try {
-        const user = await User.findById(req.userID);
-        if (!user.isSeller) {
-            return res.status(403).send({ error: true, message: 'Only sellers can withdraw funds.' });
-        }
+// const requestWithdrawal = async (req, res) => {
+//     try {
+//         const user = await User.findById(req.userID);
+//         if (!user.isSeller) {
+//             return res.status(403).send({ error: true, message: 'Only sellers can withdraw funds.' });
+//         }
 
-        const { amount } = req.body;
-        if (!amount || amount <= 0) {
-            return res.status(400).send({ error: true, message: 'Invalid withdrawal amount.' });
-        }
+//         const { amount } = req.body;
+//         if (!amount || amount <= 0) {
+//             return res.status(400).send({ error: true, message: 'Invalid withdrawal amount.' });
+//         }
 
-        // Find all completed, not withdrawn OrderStatus for this seller
-        const completedStatuses = await OrderStatus.find({
-            sellerID: user._id,
-            status: 'Completed',
-            withdrawn: { $ne: true },
-            deletedAt: null
-        });
+//         // Find all completed, not withdrawn OrderStatus for this seller
+//         const completedStatuses = await OrderStatus.find({
+//             sellerID: user._id,
+//             status: 'Completed',
+//             withdrawn: { $ne: true },
+//             deletedAt: null
+//         });
 
-        // Calculate available funds
-        const orderIDs = completedStatuses.map(s => s.orderID);
-        const orders = await Order.find({ _id: { $in: orderIDs } });
-        let availableFunds = 0;
-        let statusToWithdraw = [];
-        completedStatuses.forEach(status => {
-            const order = orders.find(o => o._id.toString() === status.orderID.toString());
-            if (!order) return;
-            const gigItem = order.gigs.find(g => g.gigID.toString() === status.gigID.toString() && g.sellerID.toString() === user._id.toString());
-            if (!gigItem) return;
-            const amt = gigItem.total || gigItem.price || 0;
-            availableFunds += amt;
-            statusToWithdraw.push({ status, amt });
-        });
+//         // Calculate available funds
+//         const orderIDs = completedStatuses.map(s => s.orderID);
+//         const orders = await Order.find({ _id: { $in: orderIDs } });
+//         let availableFunds = 0;
+//         let statusToWithdraw = [];
+//         completedStatuses.forEach(status => {
+//             const order = orders.find(o => o._id.toString() === status.orderID.toString());
+//             if (!order) return;
+//             const gigItem = order.gigs.find(g => g.gigID.toString() === status.gigID.toString() && g.sellerID.toString() === user._id.toString());
+//             if (!gigItem) return;
+//             const amt = gigItem.total || gigItem.price || 0;
+//             availableFunds += amt;
+//             statusToWithdraw.push({ status, amt });
+//         });
 
-        if (amount > availableFunds) {
-            return res.status(400).send({ error: true, message: 'Requested amount exceeds available funds.' });
-        }
+//         if (amount > availableFunds) {
+//             return res.status(400).send({ error: true, message: 'Requested amount exceeds available funds.' });
+//         }
 
-        // Mark enough statuses as withdrawn to cover the amount
-        let sum = 0;
-        let statusesToMark = [];
-        for (let i = 0; i < statusToWithdraw.length; i++) {
-            if (sum >= amount) break;
-            sum += statusToWithdraw[i].amt;
-            statusesToMark.push(statusToWithdraw[i].status._id);
-        }
+//         // Mark enough statuses as withdrawn to cover the amount
+//         let sum = 0;
+//         let statusesToMark = [];
+//         for (let i = 0; i < statusToWithdraw.length; i++) {
+//             if (sum >= amount) break;
+//             sum += statusToWithdraw[i].amt;
+//             statusesToMark.push(statusToWithdraw[i].status._id);
+//         }
 
-        // Mark as withdrawn
-        await OrderStatus.updateMany(
-            { _id: { $in: statusesToMark } },
-            { $set: { withdrawn: true } }
-        );
+//         // Mark as withdrawn
+//         await OrderStatus.updateMany(
+//             { _id: { $in: statusesToMark } },
+//             { $set: { withdrawn: true } }
+//         );
 
-        // Stripe payout logic
-        if (!user.stripeAccountId) {
-            return res.status(400).send({ error: true, message: 'Seller has not completed Stripe onboarding.' });
-        }
-        await stripe.transfers.create({
-            amount: Math.round(sum * 100), // in cents
-            currency: 'usd',
-            destination: user.stripeAccountId,
-            description: `Withdrawal for seller ${user.username} (${user._id})`
-        });
+//         // Stripe payout logic
+//         if (!user.stripeAccountId) {
+//             return res.status(400).send({ error: true, message: 'Seller has not completed Stripe onboarding.' });
+//         }
+//         await stripe.transfers.create({
+//             amount: Math.round(sum * 100), // in cents
+//             currency: 'usd',
+//             destination: user.stripeAccountId,
+//             description: `Withdrawal for seller ${user.username} (${user._id})`
+//         });
 
-        // Create withdrawal record (approved immediately)
-        const withdrawal = new Withdrawal({
-            sellerID: user._id,
-            amount: sum,
-            status: 'Approved',
-            processedAt: new Date()
-        });
-        await withdrawal.save();
+//         // Create withdrawal record (approved immediately)
+//         const withdrawal = new Withdrawal({
+//             sellerID: user._id,
+//             amount: sum,
+//             status: 'Approved',
+//             processedAt: new Date()
+//         });
+//         await withdrawal.save();
 
-        // Send withdrawal notification email to seller (approved)
-        await sendSellerWithdrawalNotificationEmail(
-            user.email,
-            user.username,
-            sum,
-            'Approved',
-            withdrawal.processedAt,
-            transporter
-        );
-        // Also send status update email
-        await sendSellerWithdrawalStatusUpdateEmail(
-            user.email,
-            user.username,
-            sum,
-            'Approved',
-            withdrawal.processedAt,
-            transporter
-        );
+//         // Send withdrawal notification email to seller (approved)
+//         await sendSellerWithdrawalNotificationEmail(
+//             user.email,
+//             user.username,
+//             sum,
+//             'Approved',
+//             withdrawal.processedAt,
+//             transporter
+//         );
+//         // Also send status update email
+//         await sendSellerWithdrawalStatusUpdateEmail(
+//             user.email,
+//             user.username,
+//             sum,
+//             'Approved',
+//             withdrawal.processedAt,
+//             transporter
+//         );
 
-        return res.send({
-            error: false,
-            message: 'Withdrawal processed and paid out via Stripe.',
-            withdrawal
-        });
-    } catch (error) {
-        return res.status(500).send({ error: true, message: error.message || 'Internal server error.' });
-    }
-};
+//         return res.send({
+//             error: false,
+//             message: 'Withdrawal processed and paid out via Stripe.',
+//             withdrawal
+//         });
+//     } catch (error) {
+//         return res.status(500).send({ error: true, message: error.message || 'Internal server error.' });
+//     }
+// };
 
 // GET /orders/withdrawals
 const getWithdrawals = async (req, res) => {
@@ -623,6 +623,6 @@ const getEarningStats = async (request, response) => {
 
 module.exports = {
     getOrders, getOrderDetailsById, paymentIntent, createPayment, createOrders, updateOrderStatus,
-    updatePaymentStatus, requestWithdrawal, getWithdrawals, getEarningStats
+    updatePaymentStatus, getWithdrawals, getEarningStats
 }
 

@@ -8,6 +8,7 @@ const paymentMethodSchema = new mongoose.Schema({
     accountHolderName: { type: String, required: true },
     country: { type: String, required: true },
     currency: { type: String, required: true },
+    bankId: { type: String, required: false },
     bankName: { type: String },
     last4: { type: String },
     status: { type: String }, // e.g. 'verified', 'new', etc.
