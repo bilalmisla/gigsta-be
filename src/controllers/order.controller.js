@@ -144,9 +144,9 @@ const getOrderDetailsById = async (request, response) => {
             //         status: status.status
             //     }
             // } else {
-                return {
-                    ...gig.toObject(),
-                };
+            return {
+                ...gig.toObject(),
+            };
             // }
         }
 
@@ -580,12 +580,48 @@ const getEarningStats = async (request, response) => {
             }
         });
 
-        // 3. For each, get the corresponding order and gig info for price
+        // // 3. For each, get the corresponding order and gig info for price
+        // let availableFunds = 0;
+        // let futurePayments = 0;
+        // let totalEarnings = 0;
+
+        // // We'll need to fetch all relevant orders in one go for efficiency
+        // const orderIDs = Array.from(new Set(Object.values(latestStatusMap).map(s => s.orderID)));
+        // const orders = await Order.find({ _id: { $in: orderIDs } });
+        // const orderMap = {};
+        // orders.forEach(order => { orderMap[order._id.toString()] = order; });
+
+        // Object.values(latestStatusMap).forEach(status => {
+        //     const order = orderMap[status.orderID?.toString()];
+        //     if (!order) return;
+        //     // Find the gig in the order's gigs array
+        //     const gigItem = order.gigs.find(g => g.gigID.toString() === status.gigID.toString() && g.sellerID.toString() === user._id.toString());
+        //     if (!gigItem) return;
+        //     const amount = gigItem.total || gigItem.price || 0;
+
+        //     if (status.status === 'Completed' && !status.withdrawn) {
+        //         availableFunds += amount;
+        //         totalEarnings += amount;
+        //     } else if (status.status !== "Canceled" && status.status !== "Completed") {
+        //         futurePayments += amount;
+        //     }
+        // });
+
+        // return response.send({
+        //     availableFunds,
+        //     futurePayments,
+        //     totalEarnings
+        // });
+        
         let availableFunds = 0;
         let futurePayments = 0;
         let totalEarnings = 0;
 
-        // We'll need to fetch all relevant orders in one go for efficiency
+        const availableStatuses = [];
+        const futureStatuses = [];
+        const totalEarningStatuses = [];
+
+        // Fetch all relevant orders
         const orderIDs = Array.from(new Set(Object.values(latestStatusMap).map(s => s.orderID)));
         const orders = await Order.find({ _id: { $in: orderIDs } });
         const orderMap = {};
@@ -594,25 +630,40 @@ const getEarningStats = async (request, response) => {
         Object.values(latestStatusMap).forEach(status => {
             const order = orderMap[status.orderID?.toString()];
             if (!order) return;
-            // Find the gig in the order's gigs array
-            const gigItem = order.gigs.find(g => g.gigID.toString() === status.gigID.toString() && g.sellerID.toString() === user._id.toString());
+
+            const gigItem = order.gigs.find(g =>
+                g.gigID.toString() === status.gigID.toString() &&
+                g.sellerID.toString() === user._id.toString()
+            );
             if (!gigItem) return;
+
             const amount = gigItem.total || gigItem.price || 0;
+            const statusEntry = {
+                status: status.status,
+                amount,
+                withdrawn: status.withdrawn,
+                gigID: status.gigID,
+                orderID: status.orderID
+            };
+
+            // Accumulate amounts and group statuses
             if (status.status === 'Completed' && !status.withdrawn) {
                 availableFunds += amount;
                 totalEarnings += amount;
-            } else if (status.status === 'Completed' && status.withdrawn) {
-                totalEarnings += amount;
-            } else {
+                availableStatuses.push(statusEntry);
+                totalEarningStatuses.push(statusEntry);
+            } else if (status.status !== "Canceled" && status.status !== "Completed") {
                 futurePayments += amount;
+                futureStatuses.push(statusEntry);
             }
         });
 
-        return response.send({
-            availableFunds,
-            futurePayments,
-            totalEarnings
-        });
+        // Return the response in the requested format
+        return response.send([
+            { availableFunds, statuses: availableStatuses },
+            { futurePayments, statuses: futureStatuses },
+            { totalEarnings, statuses: totalEarningStatuses }
+        ]);
     } catch (error) {
         return response.status(500).send({
             error: true,

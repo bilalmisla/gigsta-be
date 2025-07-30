@@ -99,7 +99,7 @@ const createStripeAccountLink = async (req, res) => {
             const account = await stripe.accounts.create({
                 type: 'express',
                 email: user.email,
-                capabilities: { transfers: { requested: true } }
+                capabilities: { transfers: { requested: true }, card_payments: { requested: true } }
             });
             user.stripeAccountId = account.id;
             await user.save();
@@ -108,8 +108,8 @@ const createStripeAccountLink = async (req, res) => {
         // Create account link for onboarding
         const accountLink = await stripe.accountLinks.create({
             account: user.stripeAccountId,
-            refresh_url: `${process.env.FRONTEND_URL}/stripe/reauth`,
-            return_url: `${process.env.FRONTEND_URL}/stripe/success`,
+            refresh_url: `${process.env.FRONTEND_URL}/account`,
+            return_url: `${process.env.FRONTEND_URL}/account`,
             type: 'account_onboarding',
         });
 
@@ -140,7 +140,8 @@ const addSellerIban = async (req, res) => {
                     country,
                     currency,
                     account_holder_name: accountHolderName,
-                    account_number: iban
+                    account_number: iban,
+                    account_holder_type: 'individual'
                 }
             }
         );
