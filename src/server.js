@@ -9,9 +9,10 @@ const PORT = 8080;
 // Other Route files
 const { 
     userRoute, conversationRoute, gigRoute, messageRoute, 
-    orderRoute, reviewRoute, authRoute, contactRoute 
+    orderRoute, reviewRoute, authRoute, contactRoute, paymentMethodRoute 
 } = require('./routes');
 const { OrderStatus } = require('./models');
+const autoUpdateCollections = require('./utils/autoUpdateCollections');
 
 // App
 const app = express();
@@ -35,6 +36,7 @@ app.use('/api/orders', orderRoute);
 app.use('/api/messages', messageRoute);
 app.use('/api/reviews', reviewRoute);
 app.use('/api/submit-form', contactRoute);
+app.use('/api/pm', paymentMethodRoute);
 
 // const updateAllRecords = async () => {
 //     const result = await OrderStatus.updateMany({}, { $set: { revisionRequestedCount: 0 } });
@@ -58,9 +60,11 @@ app.get('/ip', (request, response) => {
 app.listen(PORT, async () => {
     try {
         await connect();
-        console.log(`Listening at http://localhost:${PORT}`);
+        console.log(`🚀 Listening at http://localhost:${PORT}`);
+        // await autoUpdateCollections();
+        // console.log('✅ All collections updated with missing schema fields.');
     }
     catch ({ message }) {
         console.log(message);
     }
-})
+});

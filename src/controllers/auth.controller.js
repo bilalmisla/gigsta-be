@@ -192,11 +192,11 @@ const verifyEmail = async (request, response) => {
 // HANDLE LOGIN WITH SOCIAL LINKS
 
 const authLogin = async (req, res) => {
-    const { username, password, credential } = req.body;
+    const { username, password, credential, isSeller } = req.body;
 
     try {
         if (credential) {
-            return await handleSocialLogin(credential, res);
+            return await handleSocialLogin(credential, isSeller, res);
         }
         return await handleDefaultLogin(username, password, res);
     } catch ({ message, status = 500 }) {
@@ -204,7 +204,7 @@ const authLogin = async (req, res) => {
     }
 };
 
-const handleSocialLogin = async (credential, res) => {
+const handleSocialLogin = async (credential, isSeller, res) => {
     try {
         const ticket = await client.verifyIdToken({
             idToken: credential,
@@ -226,6 +226,7 @@ const handleSocialLogin = async (credential, res) => {
             user.username = payload.name;
             user.image = payload.picture;
             user.isVerified = payload.email_verified;
+            user.isSeller = isSeller;
             await user.save();
 
             await restoreRelatedRecords(user._id);
@@ -241,6 +242,7 @@ const handleSocialLogin = async (credential, res) => {
                 image: payload.picture,
                 isVerified: payload.email_verified,
                 googleId: payload.sub,
+                isSeller
             });
             await user.save();
             await sendConfirmAccountCreatedEmail(user.email, user.username);
@@ -255,6 +257,7 @@ const handleSocialLogin = async (credential, res) => {
             image: payload.picture,
             isVerified: payload.email_verified,
             googleId: payload.sub,
+            isSeller
         });
         await user.save();
 
