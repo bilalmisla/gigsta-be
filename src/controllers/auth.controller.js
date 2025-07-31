@@ -26,7 +26,15 @@ const sendVerificationEmail = async (email, username, token) => {
         html: `
             <p><strong>Hi ${username},</strong></p>
             <p>Thank you for signing up for <a href=${process.env.FRONTEND_URL} target="_blank">Gigsta.ai</a>! Please verify your email by clicking the link below:</p>
-            <p><a href="${verificationUrl}" target="_blank">${verificationUrl}</a></p>
+            <p><a href="${verificationUrl}" style="style="
+            background-color:#f10bad;
+                                              font-size: 15px;
+                                              color: #ffffff;
+                                              text-decoration: none;
+                                              font-weight: 700;
+                                              padding: 14px 30px;
+                                              display: block;text-transform: uppercase;
+                                            " target="_blank">Verify Your Account</a></p>
             <p>This link will expire in 24 hours.</p>
             <p>Best regards, <br /> Gigsta Team</p>
         `
@@ -104,7 +112,7 @@ const sendAccountDeletedEmail = async (email, username) => {
 }
 
 const authRegister = async (request, response) => {
-    const { username, email, phone, password, image, isSeller, description } = request.body;
+    const { username, email, phone, password, image, isSeller, description, fullname } = request.body;
 
     try {
         const hash = await bcrypt.hash(password, saltRounds);
@@ -123,6 +131,7 @@ const authRegister = async (request, response) => {
             image,
             description,
             isSeller,
+            fullname,
             // phone,
             isVerified: false // Add an isVerified field in your User model
         });
@@ -435,7 +444,7 @@ const authUpdatePassword = async (request, response) => {
 }
 
 const authUpdateProfile = async (request, response) => {
-    const { username, email, description, tagline, image } = request.body;
+    const { username, email, description, tagline, image, fullname } = request.body;
     try {
         const user = await User.findOne({ _id: request.userID }).select('-password');
         if (!user) {
@@ -458,6 +467,7 @@ const authUpdateProfile = async (request, response) => {
         user.description = description;
         user.image = image;
         user.tagline = tagline;
+        user.fullname = fullname;
         const updatedUser = await user.save();
 
         return response.status(200).send({

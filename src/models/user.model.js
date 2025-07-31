@@ -48,6 +48,11 @@ const userSchema = new mongoose.Schema({
         required: false,
         default: null
     },
+    fullname: {
+        type: String,
+        required: true,
+        default: null
+    },
     isSeller: {
         type: Boolean,
         default: false,
