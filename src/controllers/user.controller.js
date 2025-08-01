@@ -126,43 +126,60 @@ const addSellerIban = async (req, res) => {
             return res.status(400).send({ error: true, message: 'Seller must complete Stripe onboarding first.' });
         }
 
-        const { iban, accountHolderName, country, currency } = req.body;
-        if (!iban || !accountHolderName || !country || !currency) {
+        const { iban, accountHolderName, amount } = req.body;
+        if (!iban || !accountHolderName) {
             return res.status(400).send({ error: true, message: 'Missing required fields.' });
         }
 
-        // Add IBAN as external account to Stripe Connect account
-        const bankAccount = await stripe.accounts.createExternalAccount(
-            user.stripeAccountId,
-            {
-                external_account: {
-                    object: 'bank_account',
-                    country,
-                    currency,
-                    account_holder_name: accountHolderName,
-                    account_number: iban,
-                    account_holder_type: 'individual'
-                }
-            }
-        );
-
-        // Optionally, save the bank account info in your DB
-        const paymentMethod = await PaymentMethod.create({
-            bankId: bankAccount.id,
-            last4: bankAccount.last4,
-            bankName: bankAccount.bank_name,
-            country: bankAccount.country,
-            currency: bankAccount.currency,
-            status: bankAccount.status // 'new', 'verified', etc.
+        const withdraw = await Withdrawal.create({
+            sellerID: user._id,
+            amount,
+            // stripeTransferId: transfer.id,
+            type: 'manual',
+            status: 'pending',
+            country: user.country || 'pk',
+            iban,
+            accountHolderName
         });
-        await paymentMethod.save();
 
-        // Check verification status
-        if (bankAccount.status === 'verified') {
-            return res.send({ error: false, message: 'IBAN verified and added as payout method.', paymentMethod });
-        } else {
-            return res.send({ error: false, message: 'IBAN added, pending verification.', paymentMethod });
-        }
+        return res.send({
+            error: false,
+            message: 'Withdrawal processed successfully.',
+            withdraw
+        });
+
+        // Add IBAN as external account to Stripe Connect account
+        // const bankAccount = await stripe.accounts.createExternalAccount(
+        //     user.stripeAccountId,
+        //     {
+        //         external_account: {
+        //             object: 'bank_account',
+        //             country,
+        //             currency,
+        //             account_holder_name: accountHolderName,
+        //             account_number: iban,
+        //             account_holder_type: 'individual'
+        //         }
+        //     }
+        // );
+
+        // // Optionally, save the bank account info in your DB
+        // const paymentMethod = await PaymentMethod.create({
+        //     bankId: bankAccount.id,
+        //     last4: bankAccount.last4,
+        //     bankName: bankAccount.bank_name,
+        //     country: bankAccount.country,
+        //     currency: bankAccount.currency,
+        //     status: bankAccount.status // 'new', 'verified', etc.
+        // });
+        // await paymentMethod.save();
+
+        // // Check verification status
+        // if (bankAccount.status === 'verified') {
+        //     return res.send({ error: false, message: 'IBAN verified and added as payout method.', paymentMethod });
+        // } else {
+        //     return res.send({ error: false, message: 'IBAN added, pending verification.', paymentMethod });
+        // }
     } catch (error) {
         return res.status(500).send({ error: true, message: error.message });
     }
@@ -184,46 +201,46 @@ const withdrawSellerFunds = async (req, res) => {
             return res.status(400).send({ error: true, message: 'Valid amount is required for withdrawal.' });
         }
 
-        const { availableFunds, eligibleStatusIds } = await calculateSellerAvailableFunds(user._id);
+        // const { availableFunds, eligibleStatusIds } = await calculateSellerAvailableFunds(user._id);
 
-        if (amount > availableFunds) {
-            return res.status(400).send({
-                error: true,
-                message: `Insufficient available funds. You have $${availableFunds.toFixed(2)} available for withdrawal.`
-            });
-        }
+        // if (amount > availableFunds) {
+        //     return res.status(400).send({
+        //         error: true,
+        //         message: `Insufficient available funds. You have $${availableFunds.toFixed(2)} available for withdrawal.`
+        //     });
+        // }
 
         // 🪐 Create Stripe transfer to seller
-        const transfer = await stripe.transfers.create({
-            amount: Math.round(amount * 100),
-            currency: 'usd',
-            destination: user.stripeAccountId,
-            transfer_group: `SELLER_WITHDRAW_${user._id}_${Date.now()}`
-        });
+        // const transfer = await stripe.transfers.create({
+        //     amount: Math.round(amount * 100),
+        //     currency: 'usd',
+        //     destination: user.stripeAccountId,
+        //     transfer_group: `SELLER_WITHDRAW_${user._id}_${Date.now()}`
+        // });
 
         // 🪐 Mark relevant OrderStatuses as withdrawn until amount is fulfilled
-        let remaining = amount;
-        for (const statusId of eligibleStatusIds) {
-            if (remaining <= 0) break;
-            const status = await OrderStatus.findById(statusId);
-            if (!status) continue;
+        // let remaining = amount;
+        // for (const statusId of eligibleStatusIds) {
+        //     if (remaining <= 0) break;
+        //     const status = await OrderStatus.findById(statusId);
+        //     if (!status) continue;
 
-            const order = orderMap.get(status.orderID?.toString());
-            if (!order) continue;
+        //     const order = orderMap.get(status.orderID?.toString());
+        //     if (!order) continue;
 
-            const gigItem = order.gigs.find(g =>
-                g.gigID.toString() === status.gigID.toString() &&
-                g.sellerID.toString() === user._id.toString()
-            );
-            if (!gigItem) continue;
+        //     const gigItem = order.gigs.find(g =>
+        //         g.gigID.toString() === status.gigID.toString() &&
+        //         g.sellerID.toString() === user._id.toString()
+        //     );
+        //     if (!gigItem) continue;
 
-            const gigAmount = gigItem.total || gigItem.price || 0;
+        //     const gigAmount = gigItem.total || gigItem.price || 0;
 
-            status.withdrawn = true;
-            await status.save();
+        //     status.withdrawn = true;
+        //     await status.save();
 
-            remaining -= gigAmount;
-        }
+        //     remaining -= gigAmount;
+        // }
 
         // 🪐 Track withdrawal in Withdrawal model
         await Withdrawal.create({

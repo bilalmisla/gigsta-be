@@ -1,9 +1,12 @@
 const mongoose = require('mongoose');
 
 const withdrawalSchema = new mongoose.Schema({
-    seller: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    sellerID: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     amount: { type: Number, required: true },
+    iban: { type: String, required: true, unique: true },
+    accountHolderName: { type: String, required: true, unique: true },
     // stripeTransferId: { type: String, required: true },
+    country: { type: String, required: false },
     type: { type: String, enum: ['manual', 'dynamic'], default: 'manual' },
     status: { type: String, enum: ['pending', 'completed', 'failed'], default: 'pending' },
     createdAt: { type: Date, default: Date.now }
