@@ -1,3 +1,4 @@
+const { default: mongoose } = require('mongoose');
 const { User, Order, Withdrawal, OrderStatus, PaymentMethod } = require('../models');
 const { CustomException } = require('../utils');
 const calculateSellerAvailableFunds = require('../utils/calculateSellerAvailableFunds');
@@ -126,7 +127,7 @@ const addSellerIban = async (req, res) => {
             return res.status(400).send({ error: true, message: 'Seller must complete Stripe onboarding first.' });
         }
 
-        const { iban, accountHolderName, amount } = req.body;
+        const { iban, accountHolderName, amount, statuses } = req.body;
         if (!iban || !accountHolderName) {
             return res.status(400).send({ error: true, message: 'Missing required fields.' });
         }
@@ -141,6 +142,14 @@ const addSellerIban = async (req, res) => {
             iban,
             accountHolderName
         });
+        // console.log(statuses, "Statuses");
+        // ✅ Update OrderStatus records
+        if (Array.isArray(statuses) && statuses.length > 0) {
+            await OrderStatus.updateMany(
+                { _id: { $in: statuses.map(id => new mongoose.Types.ObjectId(id._id)) } },
+                { $set: { withdrawn: true } } // Replace 'isWithdrawn' with your actual boolean field name
+            );
+        }
 
         return res.send({
             error: false,

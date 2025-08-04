@@ -553,7 +553,7 @@ const getWithdrawals = async (req, res) => {
         if (!user.isSeller) {
             return res.status(403).send({ error: true, message: 'Only sellers can view withdrawals.' });
         }
-        const withdrawals = await Withdrawal.find({ sellerID: user._id }).sort({ createdAt: -1 });
+        const withdrawals = await Withdrawal.find({ sellerID: user._id }).populate('sellerID', 'username email image country').sort({ createdAt: -1 });
         return res.send({ error: false, withdrawals });
     } catch (error) {
         return res.status(500).send({ error: true, message: error.message || 'Internal server error.' });
@@ -639,6 +639,7 @@ const getEarningStats = async (request, response) => {
 
             const amount = gigItem.total || gigItem.price || 0;
             const statusEntry = {
+                ...status._doc,
                 status: status.status,
                 amount,
                 withdrawn: status.withdrawn,
