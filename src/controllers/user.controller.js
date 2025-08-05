@@ -124,7 +124,7 @@ const addSellerIban = async (req, res) => {
     try {
         const user = await User.findById(req.userID);
         if (!user.isSeller) {
-            return res.status(400).send({ error: true, message: 'Seller must complete Stripe onboarding first.' });
+            return res.status(400).send({ error: true, message: 'Only seller can withdraw his amount.' });
         }
 
         const { iban, accountHolderName, amount, statuses } = req.body;
