@@ -648,11 +648,12 @@ const getEarningStats = async (request, response) => {
             };
 
             // Accumulate amounts and group statuses
-            if (status.status === 'Completed' && !status.withdrawn) {
-                availableFunds += amount;
+            if (status.status === 'Completed') {
                 totalEarnings += amount;
-                availableStatuses.push(statusEntry);
                 totalEarningStatuses.push(statusEntry);
+            } else if (status.status === 'Completed' && !status.withdrawn) {
+                availableFunds += amount;
+                availableStatuses.push(statusEntry);
             } else if (status.status !== "Canceled" && status.status !== "Completed") {
                 futurePayments += amount;
                 futureStatuses.push(statusEntry);
