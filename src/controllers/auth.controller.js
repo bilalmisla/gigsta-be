@@ -444,7 +444,7 @@ const authUpdatePassword = async (request, response) => {
 }
 
 const authUpdateProfile = async (request, response) => {
-    const { username, email, description, tagline, image, fullname } = request.body;
+    const { username, email, description, tagline, image, fullname, postalCode, address, country } = request.body;
     try {
         const user = await User.findOne({ _id: request.userID }).select('-password');
         if (!user) {
@@ -468,6 +468,10 @@ const authUpdateProfile = async (request, response) => {
         user.image = image;
         user.tagline = tagline;
         user.fullname = fullname;
+        user.postalCode = postalCode;
+        user.address = address;
+        user.country = country;
+        
         const updatedUser = await user.save();
 
         return response.status(200).send({
@@ -693,12 +697,65 @@ const handleFetchProfile = async (req, res) => {
     }
 }
 
+const handleFetchEarnings = async (req, res) => {
+    try {
+        const { username } = req.params;
+
+        const user = await User.findOne({ username: username });
+        if (!user) {
+            throw CustomException('User not found!', 404);
+        }
+
+        // 1. Find all OrderStatus for this seller
+        const orderStatuses = await OrderStatus.find({ sellerID: user._id, deletedAt: null });
+
+        // 2. Group by orderID+gigID to get latest status for each gig in each order
+        const latestStatusMap = {};
+        orderStatuses.forEach(status => {
+            const key = `${status.orderID}_${status.gigID}`;
+            if (!latestStatusMap[key] || new Date(status.createdAt) > new Date(latestStatusMap[key].createdAt)) {
+                latestStatusMap[key] = status;
+            }
+        });
+
+        let totalEarnings = 0;
+
+        // Fetch all relevant orders
+        const orderIDs = Array.from(new Set(Object.values(latestStatusMap).map(s => s.orderID)));
+        const orders = await Order.find({ _id: { $in: orderIDs } });
+        const orderMap = {};
+        orders.forEach(order => { orderMap[order._id.toString()] = order; });
+
+        Object.values(latestStatusMap).forEach(status => {
+            const order = orderMap[status.orderID?.toString()];
+            if (!order) return;
+
+            const gigItem = order.gigs.find(g =>
+                g.gigID.toString() === status.gigID.toString() &&
+                g.sellerID.toString() === user._id.toString()
+            );
+            if (!gigItem) return;
+            const amount = gigItem.total || gigItem.price || 0;
+
+            // Accumulate amounts and group statuses
+            if (status.status === 'Completed') {
+                totalEarnings += amount;
+            }
+        });
+
+        // Return the response in the requested format
+        return res.send({ totalEarnings });
+    } catch (error) {
+        return res.status(error.statusCode || 500).json({ success: false, message: error.message });
+    }
+}
+
 module.exports = {
     authLogin,
     authLogout,
     authRegister,
     authStatus,
     verifyEmail,
-    authResetPassword, authConfirmPassword, authUpdatePassword,
+    authResetPassword, authConfirmPassword, authUpdatePassword, handleFetchEarnings,
     authUpdateProfile, authUpdateEmail, authDeleteAccount, signInWithFacebook, handleFetchProfile
 }

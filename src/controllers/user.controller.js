@@ -1,8 +1,16 @@
 const { default: mongoose } = require('mongoose');
 const { User, Order, Withdrawal, OrderStatus, PaymentMethod } = require('../models');
 const { CustomException } = require('../utils');
-const calculateSellerAvailableFunds = require('../utils/calculateSellerAvailableFunds');
 const stripe = require('stripe')(process.env.STRIPE_SECRET);
+const nodemailer = require('nodemailer');
+
+const transporter = nodemailer.createTransport({
+    service: 'Gmail',
+    auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+    }
+});
 
 const deleteUser = async (request, response) => {
     const { _id } = request.params;
@@ -66,7 +74,10 @@ const fetchTopSellers = async (request, response) => {
                     email: "$seller.email",
                     country: "$seller.country",
                     image: "$seller.image",
-                    description: "$seller.description"
+                    description: "$seller.description",
+                    tagline: "$seller.tagline",
+                    address: "$seller.address",
+                    postalCode: "$seller.postalCode",
                 }
             }
         ]);
@@ -148,6 +159,22 @@ const addSellerIban = async (req, res) => {
                 { $set: { withdrawn: true } }
             );
         }
+
+        await sendAdminWithdrawalNotificationEmail(
+            process.env.EMAIL_USER,
+            {
+                fullName: user.fullname,
+                email: user.email,
+                address: user.address,
+                postalCode: user.postalCode,
+                country: user.country || 'pk',
+                iban,
+                amount,
+                requestId: withdraw._id,
+                requestedAt: withdraw.createdAt
+            },
+            transporter
+        );
 
         return res.send({
             error: false,

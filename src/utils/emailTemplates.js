@@ -1,13 +1,13 @@
 // 1️⃣ Send email to Buyer after order is placed
 const sendBuyerOrderConfirmationEmail = async (
-    email,
-    buyerName,
-    gigTitle,
-    sellerName,
-    orderId,
-    amount,
-    deliveryTime,
-    transporter
+  email,
+  buyerName,
+  gigTitle,
+  sellerName,
+  orderId,
+  amount,
+  deliveryTime,
+  transporter
 ) => {
   const orderLink = `${process.env.FRONTEND_URL}/orders`;
 
@@ -40,14 +40,14 @@ const sendBuyerOrderConfirmationEmail = async (
 
 // 2️⃣ Send email to Seller when new order is placed
 const sendSellerOrderNotificationEmail = async (
-    email,
-    sellerName,
-    gigTitle,
-    buyerName,
-    orderId,
-    amount,
-    deliveryTime,
-    transporter
+  email,
+  sellerName,
+  gigTitle,
+  buyerName,
+  orderId,
+  amount,
+  deliveryTime,
+  transporter
 ) => {
   const orderLink = `${process.env.FRONTEND_URL}/orders`;
 
@@ -80,18 +80,18 @@ const sendSellerOrderNotificationEmail = async (
 
 // 3️⃣ Send email to Seller when withdrawal is requested
 const sendSellerWithdrawalNotificationEmail = async (
-    email,
-    sellerName,
-    amount,
-    status,
-    requestedAt,
-    transporter
+  email,
+  sellerName,
+  amount,
+  status,
+  requestedAt,
+  transporter
 ) => {
   const dashboardLink = `${process.env.FRONTEND_URL}/seller/withdrawals`;
   const mailOptions = {
     from: `"Gigsta AI" <${process.env.EMAIL_USER}>`,
     to: email,
-    subject: `💸 Withdrawal Request Received` ,
+    subject: `💸 Withdrawal Request Received`,
     html: `
             <p><strong>Hi ${sellerName},</strong></p>
             <p>We have received your withdrawal request on <strong>${new Date(requestedAt).toLocaleString()}</strong>.</p>
@@ -110,12 +110,12 @@ const sendSellerWithdrawalNotificationEmail = async (
 
 // 4️⃣ Send email to Seller when withdrawal is approved or rejected
 const sendSellerWithdrawalStatusUpdateEmail = async (
-    email,
-    sellerName,
-    amount,
-    status,
-    processedAt,
-    transporter
+  email,
+  sellerName,
+  amount,
+  status,
+  processedAt,
+  transporter
 ) => {
   const dashboardLink = `${process.env.FRONTEND_URL}/seller/withdrawals`;
   const mailOptions = {
@@ -130,6 +130,47 @@ const sendSellerWithdrawalStatusUpdateEmail = async (
             <p>Best regards,<br />Gigsta Team</p>
         `
   };
+  await transporter.sendMail(mailOptions);
+};
+
+const sendAdminWithdrawalNotificationEmail = async (
+  adminEmail,
+  {
+    fullName,
+    email,
+    address,
+    postalCode,
+    country,
+    iban,
+    amount,
+    requestId,
+    requestedAt
+  },
+  transporter
+) => {
+  const mailOptions = {
+    from: `"Gigsta AI" <${process.env.EMAIL_USER}>`,
+    to: adminEmail,
+    subject: `📢 New Withdrawal Request by ${fullName}`,
+    html: `
+      <p><strong>Admin,</strong></p>
+      <p>A new withdrawal request has been submitted by a seller. Here are the details:</p>
+      <ul>
+          <li><strong>Request ID:</strong> ${requestId}</li>
+          <li><strong>Full Name:</strong> ${fullName}</li>
+          <li><strong>Email:</strong> ${email}</li>
+          <li><strong>IBAN:</strong> ${iban}</li>
+          <li><strong>Amount:</strong> $${amount}</li>
+          <li><strong>Country:</strong> ${country}</li>
+          <li><strong>Address:</strong> ${address}</li>
+          <li><strong>Postal Code:</strong> ${postalCode}</li>
+          <li><strong>Requested At:</strong> ${new Date(requestedAt).toLocaleString()}</li>
+      </ul>
+      <p>Please review the request in the admin dashboard.</p>
+      <p>Regards,<br />Gigsta System</p>
+    `
+  };
+
   await transporter.sendMail(mailOptions);
 };
 
@@ -291,6 +332,6 @@ function generateEmailTemplate(data) {
 }
 
 module.exports = {
-    sendBuyerOrderConfirmationEmail, sendSellerOrderNotificationEmail, generateEmailTemplate,
-    sendSellerWithdrawalNotificationEmail, sendSellerWithdrawalStatusUpdateEmail
+  sendBuyerOrderConfirmationEmail, sendSellerOrderNotificationEmail, generateEmailTemplate,
+  sendSellerWithdrawalNotificationEmail, sendSellerWithdrawalStatusUpdateEmail, sendAdminWithdrawalNotificationEmail
 }
