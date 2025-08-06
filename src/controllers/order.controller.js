@@ -651,10 +651,12 @@ const getEarningStats = async (request, response) => {
             if (status.status === 'Completed') {
                 totalEarnings += amount;
                 totalEarningStatuses.push(statusEntry);
-            } else if (status.status === 'Completed' && !status.withdrawn) {
+            }
+            if (status.status === 'Completed' && !status.withdrawn) {
                 availableFunds += amount;
                 availableStatuses.push(statusEntry);
-            } else if (status.status !== "Canceled" && status.status !== "Completed") {
+            }
+            if (status.status !== "Canceled" && status.status !== "Completed") {
                 futurePayments += amount;
                 futureStatuses.push(statusEntry);
             }

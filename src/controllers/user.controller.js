@@ -3,6 +3,7 @@ const { User, Order, Withdrawal, OrderStatus, PaymentMethod } = require('../mode
 const { CustomException } = require('../utils');
 const stripe = require('stripe')(process.env.STRIPE_SECRET);
 const nodemailer = require('nodemailer');
+const { sendAdminWithdrawalNotificationEmail } = require('../utils/emailTemplates');
 
 const transporter = nodemailer.createTransport({
     service: 'Gmail',
