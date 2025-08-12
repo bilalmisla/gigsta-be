@@ -139,8 +139,8 @@ const addSellerIban = async (req, res) => {
             return res.status(400).send({ error: true, message: 'Only seller can withdraw his amount.' });
         }
 
-        const { iban, accountHolderName, amount, statuses } = req.body;
-        if (!iban || !accountHolderName) {
+        const { accountHolderName, routingNumber, accountNumber, accountType, amount, statuses } = req.body;
+        if (!accountHolderName || !routingNumber || !accountNumber) {
             return res.status(400).send({ error: true, message: 'Missing required fields.' });
         }
 
@@ -150,8 +150,8 @@ const addSellerIban = async (req, res) => {
             type: 'manual',
             status: 'pending',
             country: user.country || 'pk',
-            iban,
-            accountHolderName
+            accountHolderName,
+            routingNumber, accountNumber, accountType
         });
 
         if (Array.isArray(statuses) && statuses.length > 0) {
@@ -169,7 +169,8 @@ const addSellerIban = async (req, res) => {
                 address: user.address,
                 postalCode: user.postalCode,
                 country: user.country || 'pk',
-                iban,
+                accountHolderName,
+                routingNumber, accountNumber, accountType,
                 amount,
                 requestId: withdraw._id,
                 requestedAt: withdraw.createdAt

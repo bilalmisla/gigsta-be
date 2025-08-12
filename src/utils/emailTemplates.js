@@ -141,7 +141,8 @@ const sendAdminWithdrawalNotificationEmail = async (
     address,
     postalCode,
     country,
-    iban,
+    accountHolderName,
+    routingNumber, accountNumber, accountType,
     amount,
     requestId,
     requestedAt
@@ -159,7 +160,10 @@ const sendAdminWithdrawalNotificationEmail = async (
           <li><strong>Request ID:</strong> ${requestId}</li>
           <li><strong>Full Name:</strong> ${fullName}</li>
           <li><strong>Email:</strong> ${email}</li>
-          <li><strong>IBAN:</strong> ${iban}</li>
+          <li><strong>Account Holder Name:</strong> ${accountHolderName}</li>
+          <li><strong>Routing Number:</strong> ${routingNumber}</li>
+          <li><strong>Account Number:</strong> ${accountNumber}</li>
+          <li><strong>Account Type:</strong> ${accountType}</li>
           <li><strong>Amount:</strong> $${amount}</li>
           <li><strong>Country:</strong> ${country}</li>
           <li><strong>Address:</strong> ${address}</li>
