@@ -168,7 +168,7 @@ const addSellerIban = async (req, res) => {
                 email: user.email,
                 address: user.address,
                 postalCode: user.postalCode,
-                country: user.country || 'pk',
+                country: user.country.toUpperCase() || 'pk',
                 state: user.state,
                 accountHolderName,
                 routingNumber, accountNumber, accountType,
