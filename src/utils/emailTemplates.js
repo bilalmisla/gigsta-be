@@ -140,7 +140,7 @@ const sendAdminWithdrawalNotificationEmail = async (
     email,
     address,
     postalCode,
-    country,
+    country, state,
     accountHolderName,
     routingNumber, accountNumber, accountType,
     amount,
@@ -166,6 +166,7 @@ const sendAdminWithdrawalNotificationEmail = async (
           <li><strong>Account Type:</strong> ${accountType}</li>
           <li><strong>Amount:</strong> $${amount}</li>
           <li><strong>Country:</strong> ${country}</li>
+          <li><strong>State:</strong> ${state}</li>
           <li><strong>Address:</strong> ${address}</li>
           <li><strong>Postal Code:</strong> ${postalCode}</li>
           <li><strong>Requested At:</strong> ${new Date(requestedAt).toLocaleString()}</li>

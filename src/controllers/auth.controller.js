@@ -444,7 +444,7 @@ const authUpdatePassword = async (request, response) => {
 }
 
 const authUpdateProfile = async (request, response) => {
-    const { username, email, description, tagline, image, fullname, postalCode, address, country } = request.body;
+    const { username, email, description, tagline, image, fullname, postalCode, address, country, state } = request.body;
     try {
         const user = await User.findOne({ _id: request.userID }).select('-password');
         if (!user) {
@@ -471,6 +471,7 @@ const authUpdateProfile = async (request, response) => {
         user.postalCode = postalCode;
         user.address = address;
         user.country = country;
+        user.state = state;
         
         const updatedUser = await user.save();
 
