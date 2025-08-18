@@ -274,7 +274,11 @@ const handleSocialLogin = async (credential, isSeller, res) => {
         return sendSuccessResponse(user, res);
     } catch (error) {
         console.error("Error in handleSocialLogin:", error);
-        return sendErrorResponse(res, 500, "Internal server error");
+        // return sendErrorResponse(res, 500, "Internal server error");
+        return res.status(500).send({
+            error: true,
+            message: error.message || "Internal server error"
+        });
     }
 };
 
