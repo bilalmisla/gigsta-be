@@ -3,7 +3,6 @@ const mongoose = require('mongoose');
 const withdrawalSchema = new mongoose.Schema({
     sellerID: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     amount: { type: Number, required: true },
-    // iban: { type: String, required: true },
     accountHolderName: { type: String, required: true },
     routingNumber: { type: String, required: true },
     accountNumber: { type: String, required: true },

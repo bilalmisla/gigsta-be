@@ -180,21 +180,125 @@ const getOrderDetailsById = async (request, response) => {
     }
 };
 
+// const paymentIntent = async (request, response) => {
+//     const { _id } = request.params;
+
+//     try {
+//         const gig = await Gig.findOne({ _id });
+
+//         const payment_intent = await stripe.paymentIntents.create({
+//             amount: gig.price * 100,
+//             currency: "USD",
+//             automatic_payment_methods: {
+//                 enabled: true,
+//             },
+//         });
+
+//         // await order.save();
+//         return response.send({
+//             error: false,
+//             orderItems: [{
+//                 gigID: gig._id,
+//                 image: gig.cover,
+//                 title: gig.title,
+//                 buyerID: request.userID,
+//                 sellerID: gig.userID,
+//                 price: gig.price,
+//                 quantity: 1,
+//                 total: gig.price
+//             }],
+//             totalAmount: gig.price,
+//             paymentId: payment_intent.id,
+//             clientSecret: payment_intent.client_secret
+//         })
+
+//     }
+//     catch ({ message, status = 500 }) {
+//         return response.send({
+//             error: true,
+//             message
+//         })
+//     }
+// }
+
+// const createPayment = async (request, response) => {
+//     const { cart } = request.body; // Array of gigs with quantity
+
+//     try {
+//         if (!cart.length) {
+//             throw CustomException("Cart is empty!", 400);
+//         }
+
+//         let totalAmount = 0;
+//         let orderItems = [];
+
+//         for (const item of cart) {
+//             const gig = await Gig.findById(item._id);
+//             if (!gig) {
+//                 throw CustomException(`Gig with ID ${item.gigID} not found`, 404);
+//             }
+
+//             let itemTotal = gig.price * item.quantity;
+//             totalAmount += itemTotal;
+
+//             orderItems.push({
+//                 gigID: gig._id,
+//                 image: gig.cover,
+//                 title: gig.title,
+//                 buyerID: request.userID,
+//                 sellerID: gig.userID,
+//                 price: gig.price,
+//                 quantity: item.quantity,
+//                 total: itemTotal
+//             });
+//         }
+
+//         // Create a Stripe Payment Intent
+//         const paymentIntent = await stripe.paymentIntents.create({
+//             amount: totalAmount * 100, // Convert to cents
+//             currency: "USD",
+//             automatic_payment_methods: { enabled: true },
+//         });
+
+//         return response.send({
+//             error: false,
+//             orderItems,
+//             totalAmount,
+//             paymentId: paymentIntent.id,
+//             clientSecret: paymentIntent.client_secret
+//         });
+
+//     } catch ({ message, status = 500 }) {
+//         return response.status(status).send({
+//             error: true,
+//             message
+//         });
+//     }
+// };
+
+const TAX_RATE = 0.045; // 4.5%
+
 const paymentIntent = async (request, response) => {
     const { _id } = request.params;
 
     try {
         const gig = await Gig.findOne({ _id });
+        if (!gig) {
+            throw CustomException(`Gig with ID ${_id} not found`, 404);
+        }
+
+        const subtotal = gig.price;
+        const taxAmount = parseFloat((subtotal * TAX_RATE).toFixed(2));
+        const totalWithTax = subtotal + taxAmount;
 
         const payment_intent = await stripe.paymentIntents.create({
-            amount: gig.price * 100,
+            amount: Math.round(totalWithTax * 100), // cents
             currency: "USD",
             automatic_payment_methods: {
                 enabled: true,
             },
         });
 
-        // await order.save();
         return response.send({
             error: false,
             orderItems: [{
@@ -205,21 +309,22 @@ const paymentIntent = async (request, response) => {
                 sellerID: gig.userID,
                 price: gig.price,
                 quantity: 1,
-                total: gig.price
+                total: subtotal
             }],
-            totalAmount: gig.price,
+            subtotal,
+            taxAmount,
+            totalAmount: totalWithTax,
             paymentId: payment_intent.id,
             clientSecret: payment_intent.client_secret
-        })
+        });
 
-    }
-    catch ({ message, status = 500 }) {
-        return response.send({
+    } catch ({ message, status = 500 }) {
+        return response.status(status).send({
             error: true,
             message
-        })
+        });
     }
-}
+};
 
 const createPayment = async (request, response) => {
     const { cart } = request.body; // Array of gigs with quantity
@@ -229,7 +334,7 @@ const createPayment = async (request, response) => {
             throw CustomException("Cart is empty!", 400);
         }
 
-        let totalAmount = 0;
+        let subtotal = 0;
         let orderItems = [];
 
         for (const item of cart) {
@@ -238,8 +343,8 @@ const createPayment = async (request, response) => {
                 throw CustomException(`Gig with ID ${item.gigID} not found`, 404);
             }
 
-            let itemTotal = gig.price * item.quantity;
-            totalAmount += itemTotal;
+            const itemTotal = gig.price * item.quantity;
+            subtotal += itemTotal;
 
             orderItems.push({
                 gigID: gig._id,
@@ -253,9 +358,12 @@ const createPayment = async (request, response) => {
             });
         }
 
+        const taxAmount = parseFloat((subtotal * TAX_RATE).toFixed(2));
+        const totalWithTax = subtotal + taxAmount;
+
         // Create a Stripe Payment Intent
         const paymentIntent = await stripe.paymentIntents.create({
-            amount: totalAmount * 100, // Convert to cents
+            amount: Math.round(totalWithTax * 100), // cents
             currency: "USD",
             automatic_payment_methods: { enabled: true },
         });
@@ -263,7 +371,9 @@ const createPayment = async (request, response) => {
         return response.send({
             error: false,
             orderItems,
-            totalAmount,
+            subtotal,
+            taxAmount,
+            totalAmount: totalWithTax,
             paymentId: paymentIntent.id,
             clientSecret: paymentIntent.client_secret
         });
@@ -637,7 +747,7 @@ const getEarningStats = async (request, response) => {
             );
             if (!gigItem) return;
 
-            const amount = gigItem.total || gigItem.price || 0;
+            const amount = order.totalAmount || 0;
             const statusEntry = {
                 ...status._doc,
                 status: status.status,
