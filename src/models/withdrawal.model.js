@@ -1,0 +1,16 @@
+const mongoose = require('mongoose');
+
+const withdrawalSchema = new mongoose.Schema({
+    sellerID: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    amount: { type: Number, required: true },
+    accountHolderName: { type: String, required: true },
+    routingNumber: { type: String, required: true },
+    accountNumber: { type: String, required: true },
+    accountType: { type: String, required: false },
+    country: { type: String, required: false },
+    type: { type: String, enum: ['manual', 'dynamic'], default: 'manual' },
+    status: { type: String, enum: ['pending', 'completed', 'failed'], default: 'pending' },
+    createdAt: { type: Date, default: Date.now }
+});
+
+module.exports = mongoose.model('Withdrawal', withdrawalSchema);

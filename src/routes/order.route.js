@@ -3,7 +3,7 @@ const { userMiddleware } = require('../middlewares');
 const { 
     getOrders, paymentIntent, updatePaymentStatus, 
     createOrders, createPayment, 
-    getOrderDetailsById, updateOrderStatus 
+    getOrderDetailsById, updateOrderStatus, getEarningStats, requestWithdrawal, getWithdrawals 
 } = require('../controllers/order.controller');
 const app = express.Router();
 
@@ -27,4 +27,12 @@ app.post('/update-status', userMiddleware, updateOrderStatus);
 
 app.post('/create', userMiddleware, createOrders);
 
+// Earnings stats for seller
+app.get('/earnings-stats', userMiddleware, getEarningStats);
+
+// Withdrawals
+// app.post('/withdraw', userMiddleware, requestWithdrawal);
+app.get('/withdrawals', userMiddleware, getWithdrawals);
+
 module.exports = app;
+

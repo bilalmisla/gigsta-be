@@ -26,7 +26,15 @@ const sendVerificationEmail = async (email, username, token) => {
         html: `
             <p><strong>Hi ${username},</strong></p>
             <p>Thank you for signing up for <a href=${process.env.FRONTEND_URL} target="_blank">Gigsta.ai</a>! Please verify your email by clicking the link below:</p>
-            <p><a href="${verificationUrl}" target="_blank">${verificationUrl}</a></p>
+            <p><a href="${verificationUrl}" style="style="
+            background-color:#f10bad;
+                                              font-size: 15px;
+                                              color: #ffffff;
+                                              text-decoration: none;
+                                              font-weight: 700;
+                                              padding: 14px 30px;
+                                              display: block;text-transform: uppercase;
+                                            " target="_blank">Verify Your Account</a></p>
             <p>This link will expire in 24 hours.</p>
             <p>Best regards, <br /> Gigsta Team</p>
         `
@@ -104,7 +112,7 @@ const sendAccountDeletedEmail = async (email, username) => {
 }
 
 const authRegister = async (request, response) => {
-    const { username, email, phone, password, image, isSeller, description } = request.body;
+    const { username, email, phone, password, image, isSeller, description, fullname } = request.body;
 
     try {
         const hash = await bcrypt.hash(password, saltRounds);
@@ -123,6 +131,7 @@ const authRegister = async (request, response) => {
             image,
             description,
             isSeller,
+            fullname,
             // phone,
             isVerified: false // Add an isVerified field in your User model
         });
@@ -265,7 +274,11 @@ const handleSocialLogin = async (credential, isSeller, res) => {
         return sendSuccessResponse(user, res);
     } catch (error) {
         console.error("Error in handleSocialLogin:", error);
-        return sendErrorResponse(res, 500, "Internal server error");
+        // return sendErrorResponse(res, 500, "Internal server error");
+        return res.status(500).send({
+            error: true,
+            message: error.message || "Internal server error"
+        });
     }
 };
 
@@ -435,7 +448,7 @@ const authUpdatePassword = async (request, response) => {
 }
 
 const authUpdateProfile = async (request, response) => {
-    const { username, email, description, tagline, image } = request.body;
+    const { username, email, description, tagline, image, fullname, postalCode, address, country, state } = request.body;
     try {
         const user = await User.findOne({ _id: request.userID }).select('-password');
         if (!user) {
@@ -458,6 +471,12 @@ const authUpdateProfile = async (request, response) => {
         user.description = description;
         user.image = image;
         user.tagline = tagline;
+        user.fullname = fullname;
+        user.postalCode = postalCode;
+        user.address = address;
+        user.country = country;
+        user.state = state;
+        
         const updatedUser = await user.save();
 
         return response.status(200).send({
@@ -683,12 +702,65 @@ const handleFetchProfile = async (req, res) => {
     }
 }
 
+const handleFetchEarnings = async (req, res) => {
+    try {
+        const { username } = req.params;
+
+        const user = await User.findOne({ username: username });
+        if (!user) {
+            throw CustomException('User not found!', 404);
+        }
+
+        // 1. Find all OrderStatus for this seller
+        const orderStatuses = await OrderStatus.find({ sellerID: user._id, deletedAt: null });
+
+        // 2. Group by orderID+gigID to get latest status for each gig in each order
+        const latestStatusMap = {};
+        orderStatuses.forEach(status => {
+            const key = `${status.orderID}_${status.gigID}`;
+            if (!latestStatusMap[key] || new Date(status.createdAt) > new Date(latestStatusMap[key].createdAt)) {
+                latestStatusMap[key] = status;
+            }
+        });
+
+        let totalEarnings = 0;
+
+        // Fetch all relevant orders
+        const orderIDs = Array.from(new Set(Object.values(latestStatusMap).map(s => s.orderID)));
+        const orders = await Order.find({ _id: { $in: orderIDs } });
+        const orderMap = {};
+        orders.forEach(order => { orderMap[order._id.toString()] = order; });
+
+        Object.values(latestStatusMap).forEach(status => {
+            const order = orderMap[status.orderID?.toString()];
+            if (!order) return;
+
+            const gigItem = order.gigs.find(g =>
+                g.gigID.toString() === status.gigID.toString() &&
+                g.sellerID.toString() === user._id.toString()
+            );
+            if (!gigItem) return;
+            const amount = gigItem.total || gigItem.price || 0;
+
+            // Accumulate amounts and group statuses
+            if (status.status === 'Completed') {
+                totalEarnings += amount;
+            }
+        });
+
+        // Return the response in the requested format
+        return res.send({ totalEarnings });
+    } catch (error) {
+        return res.status(error.statusCode || 500).json({ success: false, message: error.message });
+    }
+}
+
 module.exports = {
     authLogin,
     authLogout,
     authRegister,
     authStatus,
     verifyEmail,
-    authResetPassword, authConfirmPassword, authUpdatePassword,
+    authResetPassword, authConfirmPassword, authUpdatePassword, handleFetchEarnings,
     authUpdateProfile, authUpdateEmail, authDeleteAccount, signInWithFacebook, handleFetchProfile
 }

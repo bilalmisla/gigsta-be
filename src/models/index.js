@@ -5,6 +5,8 @@ const Conversation = require('./conversation.model');
 const Order = require('./order.model');
 const Review = require('./review.model');
 const OrderStatus = require('./orderStatus.model');
+const Withdrawal = require('./withdrawal.model');
+const PaymentMethod = require('./paymentMethod.model');
 
 module.exports = {
     User,
@@ -13,5 +15,7 @@ module.exports = {
     Conversation,
     Order,
     Review,
-    OrderStatus
+    OrderStatus,
+    Withdrawal,
+    PaymentMethod
 }

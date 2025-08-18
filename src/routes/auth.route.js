@@ -7,7 +7,8 @@ const {
     authUpdateEmail,
     authDeleteAccount,
     signInWithFacebook,
-    handleFetchProfile
+    handleFetchProfile,
+    handleFetchEarnings
 } = require('../controllers/auth.controller');
 const { authenticate } = require('../middlewares');
 const { User } = require('../models');
@@ -52,6 +53,9 @@ app.post("/facebook", signInWithFacebook);
 
 // Route to fetch profile
 app.get('/fetch-profile/:username', handleFetchProfile);
+
+// Route to fetch profile
+app.get('/only-earnings-stats/:username', handleFetchEarnings);
 
 // Middleware to verify token
 const authenticateToken = async (req, res, next) => {

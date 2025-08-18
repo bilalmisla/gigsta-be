@@ -1,13 +1,13 @@
 // 1️⃣ Send email to Buyer after order is placed
 const sendBuyerOrderConfirmationEmail = async (
-    email,
-    buyerName,
-    gigTitle,
-    sellerName,
-    orderId,
-    amount,
-    deliveryTime,
-    transporter
+  email,
+  buyerName,
+  gigTitle,
+  sellerName,
+  orderId,
+  amount,
+  deliveryTime,
+  transporter
 ) => {
   const orderLink = `${process.env.FRONTEND_URL}/orders`;
 
@@ -40,14 +40,14 @@ const sendBuyerOrderConfirmationEmail = async (
 
 // 2️⃣ Send email to Seller when new order is placed
 const sendSellerOrderNotificationEmail = async (
-    email,
-    sellerName,
-    gigTitle,
-    buyerName,
-    orderId,
-    amount,
-    deliveryTime,
-    transporter
+  email,
+  sellerName,
+  gigTitle,
+  buyerName,
+  orderId,
+  amount,
+  deliveryTime,
+  transporter
 ) => {
   const orderLink = `${process.env.FRONTEND_URL}/orders`;
 
@@ -73,6 +73,107 @@ const sendSellerOrderNotificationEmail = async (
             <p>We’re excited to see your creativity in action. Let us know if you need any help!</p>
             <p>Best regards,<br />Gigsta Team</p>
         `
+  };
+
+  await transporter.sendMail(mailOptions);
+};
+
+// 3️⃣ Send email to Seller when withdrawal is requested
+const sendSellerWithdrawalNotificationEmail = async (
+  email,
+  sellerName,
+  amount,
+  status,
+  requestedAt,
+  transporter
+) => {
+  const dashboardLink = `${process.env.FRONTEND_URL}/seller/withdrawals`;
+  const mailOptions = {
+    from: `"Gigsta AI" <${process.env.EMAIL_USER}>`,
+    to: email,
+    subject: `💸 Withdrawal Request Received`,
+    html: `
+            <p><strong>Hi ${sellerName},</strong></p>
+            <p>We have received your withdrawal request on <strong>${new Date(requestedAt).toLocaleString()}</strong>.</p>
+            <ul>
+                <li><strong>Amount:</strong> $${amount}</li>
+                <li><strong>Status:</strong> ${status}</li>
+            </ul>
+            <p>You can track the status of your withdrawal in your dashboard:</p>
+            <p><a href="${dashboardLink}" target="_blank">View Withdrawals</a></p>
+            <p>Thank you for using Gigsta!</p>
+            <p>Best regards,<br />Gigsta Team</p>
+        `
+  };
+  await transporter.sendMail(mailOptions);
+};
+
+// 4️⃣ Send email to Seller when withdrawal is approved or rejected
+const sendSellerWithdrawalStatusUpdateEmail = async (
+  email,
+  sellerName,
+  amount,
+  status,
+  processedAt,
+  transporter
+) => {
+  const dashboardLink = `${process.env.FRONTEND_URL}/seller/withdrawals`;
+  const mailOptions = {
+    from: `"Gigsta AI" <${process.env.EMAIL_USER}>`,
+    to: email,
+    subject: `Withdrawal ${status === 'Approved' ? 'Approved' : 'Rejected'}`,
+    html: `
+            <p><strong>Hi ${sellerName},</strong></p>
+            <p>Your withdrawal request for <strong>$${amount}</strong> has been <strong>${status}</strong> on <strong>${new Date(processedAt).toLocaleString()}</strong>.</p>
+            <p>You can view the details in your dashboard:</p>
+            <p><a href="${dashboardLink}" target="_blank">View Withdrawals</a></p>
+            <p>Best regards,<br />Gigsta Team</p>
+        `
+  };
+  await transporter.sendMail(mailOptions);
+};
+
+const sendAdminWithdrawalNotificationEmail = async (
+  adminEmail,
+  {
+    fullName,
+    email,
+    address,
+    postalCode,
+    country, state,
+    accountHolderName,
+    routingNumber, accountNumber, accountType,
+    amount,
+    requestId,
+    requestedAt
+  },
+  transporter
+) => {
+  const mailOptions = {
+    from: `"Gigsta AI" <${process.env.EMAIL_USER}>`,
+    to: adminEmail,
+    subject: `📢 New Withdrawal Request by ${fullName}`,
+    html: `
+      <p><strong>Admin,</strong></p>
+      <p>A new withdrawal request has been submitted by a seller. Here are the details:</p>
+      <ul>
+          <li><strong>Request ID:</strong> ${requestId}</li>
+          <li><strong>Full Name:</strong> ${fullName}</li>
+          <li><strong>Email:</strong> ${email}</li>
+          <li><strong>Account Holder Name:</strong> ${accountHolderName}</li>
+          <li><strong>Routing Number:</strong> ${routingNumber}</li>
+          <li><strong>Account Number:</strong> ${accountNumber}</li>
+          <li><strong>Account Type:</strong> ${accountType}</li>
+          <li><strong>Amount:</strong> $${amount}</li>
+          <li><strong>Country:</strong> ${country}</li>
+          <li><strong>State:</strong> ${state}</li>
+          <li><strong>Address:</strong> ${address}</li>
+          <li><strong>Postal Code:</strong> ${postalCode}</li>
+          <li><strong>Requested At:</strong> ${new Date(requestedAt).toLocaleString()}</li>
+      </ul>
+      <p>Please review the request in the admin dashboard.</p>
+      <p>Regards,<br />Gigsta System</p>
+    `
   };
 
   await transporter.sendMail(mailOptions);
@@ -236,5 +337,6 @@ function generateEmailTemplate(data) {
 }
 
 module.exports = {
-    sendBuyerOrderConfirmationEmail, sendSellerOrderNotificationEmail, generateEmailTemplate
+  sendBuyerOrderConfirmationEmail, sendSellerOrderNotificationEmail, generateEmailTemplate,
+  sendSellerWithdrawalNotificationEmail, sendSellerWithdrawalStatusUpdateEmail, sendAdminWithdrawalNotificationEmail
 }

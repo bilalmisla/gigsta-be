@@ -30,6 +30,10 @@ const orderStatusSchema = new mongoose.Schema({
         ref: 'Gig',
         required: false
     },
+    withdrawn: {
+        type: Boolean,
+        default: false
+    },
     deletedAt: {
         type: Date,
         default: null

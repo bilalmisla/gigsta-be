@@ -1,6 +1,6 @@
-const { Order, Gig, User, OrderStatus } = require('../models');
+const { Order, Gig, User, OrderStatus, Withdrawal } = require('../models');
 const { CustomException } = require('../utils');
-const { sendBuyerOrderConfirmationEmail, sendSellerOrderNotificationEmail } = require('../utils/emailTemplates');
+const { sendBuyerOrderConfirmationEmail, sendSellerOrderNotificationEmail, sendSellerWithdrawalNotificationEmail, sendSellerWithdrawalStatusUpdateEmail } = require('../utils/emailTemplates');
 const stripe = require('stripe')(process.env.STRIPE_SECRET);
 const nodemailer = require('nodemailer');
 const { sendOrderStatusEmail } = require('../utils/sendOrderStatusEmail');
@@ -144,9 +144,9 @@ const getOrderDetailsById = async (request, response) => {
             //         status: status.status
             //     }
             // } else {
-                return {
-                    ...gig.toObject(),
-                };
+            return {
+                ...gig.toObject(),
+            };
             // }
         }
 
@@ -180,21 +180,125 @@ const getOrderDetailsById = async (request, response) => {
     }
 };
 
+// const paymentIntent = async (request, response) => {
+//     const { _id } = request.params;
+
+//     try {
+//         const gig = await Gig.findOne({ _id });
+
+//         const payment_intent = await stripe.paymentIntents.create({
+//             amount: gig.price * 100,
+//             currency: "USD",
+//             automatic_payment_methods: {
+//                 enabled: true,
+//             },
+//         });
+
+//         // await order.save();
+//         return response.send({
+//             error: false,
+//             orderItems: [{
+//                 gigID: gig._id,
+//                 image: gig.cover,
+//                 title: gig.title,
+//                 buyerID: request.userID,
+//                 sellerID: gig.userID,
+//                 price: gig.price,
+//                 quantity: 1,
+//                 total: gig.price
+//             }],
+//             totalAmount: gig.price,
+//             paymentId: payment_intent.id,
+//             clientSecret: payment_intent.client_secret
+//         })
+
+//     }
+//     catch ({ message, status = 500 }) {
+//         return response.send({
+//             error: true,
+//             message
+//         })
+//     }
+// }
+
+// const createPayment = async (request, response) => {
+//     const { cart } = request.body; // Array of gigs with quantity
+
+//     try {
+//         if (!cart.length) {
+//             throw CustomException("Cart is empty!", 400);
+//         }
+
+//         let totalAmount = 0;
+//         let orderItems = [];
+
+//         for (const item of cart) {
+//             const gig = await Gig.findById(item._id);
+//             if (!gig) {
+//                 throw CustomException(`Gig with ID ${item.gigID} not found`, 404);
+//             }
+
+//             let itemTotal = gig.price * item.quantity;
+//             totalAmount += itemTotal;
+
+//             orderItems.push({
+//                 gigID: gig._id,
+//                 image: gig.cover,
+//                 title: gig.title,
+//                 buyerID: request.userID,
+//                 sellerID: gig.userID,
+//                 price: gig.price,
+//                 quantity: item.quantity,
+//                 total: itemTotal
+//             });
+//         }
+
+//         // Create a Stripe Payment Intent
+//         const paymentIntent = await stripe.paymentIntents.create({
+//             amount: totalAmount * 100, // Convert to cents
+//             currency: "USD",
+//             automatic_payment_methods: { enabled: true },
+//         });
+
+//         return response.send({
+//             error: false,
+//             orderItems,
+//             totalAmount,
+//             paymentId: paymentIntent.id,
+//             clientSecret: paymentIntent.client_secret
+//         });
+
+//     } catch ({ message, status = 500 }) {
+//         return response.status(status).send({
+//             error: true,
+//             message
+//         });
+//     }
+// };
+
+const TAX_RATE = 0.045; // 4.5%
+
 const paymentIntent = async (request, response) => {
     const { _id } = request.params;
 
     try {
         const gig = await Gig.findOne({ _id });
+        if (!gig) {
+            throw CustomException(`Gig with ID ${_id} not found`, 404);
+        }
+
+        const subtotal = gig.price;
+        const taxAmount = parseFloat((subtotal * TAX_RATE).toFixed(2));
+        const totalWithTax = subtotal + taxAmount;
 
         const payment_intent = await stripe.paymentIntents.create({
-            amount: gig.price * 100,
+            amount: Math.round(totalWithTax * 100), // cents
             currency: "USD",
             automatic_payment_methods: {
                 enabled: true,
             },
         });
 
-        // await order.save();
         return response.send({
             error: false,
             orderItems: [{
@@ -205,21 +309,22 @@ const paymentIntent = async (request, response) => {
                 sellerID: gig.userID,
                 price: gig.price,
                 quantity: 1,
-                total: gig.price
+                total: subtotal
             }],
-            totalAmount: gig.price,
+            subtotal,
+            taxAmount,
+            totalAmount: totalWithTax,
             paymentId: payment_intent.id,
             clientSecret: payment_intent.client_secret
-        })
+        });
 
-    }
-    catch ({ message, status = 500 }) {
-        return response.send({
+    } catch ({ message, status = 500 }) {
+        return response.status(status).send({
             error: true,
             message
-        })
+        });
     }
-}
+};
 
 const createPayment = async (request, response) => {
     const { cart } = request.body; // Array of gigs with quantity
@@ -229,7 +334,7 @@ const createPayment = async (request, response) => {
             throw CustomException("Cart is empty!", 400);
         }
 
-        let totalAmount = 0;
+        let subtotal = 0;
         let orderItems = [];
 
         for (const item of cart) {
@@ -238,8 +343,8 @@ const createPayment = async (request, response) => {
                 throw CustomException(`Gig with ID ${item.gigID} not found`, 404);
             }
 
-            let itemTotal = gig.price * item.quantity;
-            totalAmount += itemTotal;
+            const itemTotal = gig.price * item.quantity;
+            subtotal += itemTotal;
 
             orderItems.push({
                 gigID: gig._id,
@@ -253,9 +358,12 @@ const createPayment = async (request, response) => {
             });
         }
 
+        const taxAmount = parseFloat((subtotal * TAX_RATE).toFixed(2));
+        const totalWithTax = subtotal + taxAmount;
+
         // Create a Stripe Payment Intent
         const paymentIntent = await stripe.paymentIntents.create({
-            amount: totalAmount * 100, // Convert to cents
+            amount: Math.round(totalWithTax * 100), // cents
             currency: "USD",
             automatic_payment_methods: { enabled: true },
         });
@@ -263,7 +371,9 @@ const createPayment = async (request, response) => {
         return response.send({
             error: false,
             orderItems,
-            totalAmount,
+            subtotal,
+            taxAmount,
+            totalAmount: totalWithTax,
             paymentId: paymentIntent.id,
             clientSecret: paymentIntent.client_secret
         });
@@ -442,8 +552,242 @@ const updatePaymentStatus = async (request, response) => {
     }
 };
 
+// POST /orders/withdraw
+// const requestWithdrawal = async (req, res) => {
+//     try {
+//         const user = await User.findById(req.userID);
+//         if (!user.isSeller) {
+//             return res.status(403).send({ error: true, message: 'Only sellers can withdraw funds.' });
+//         }
+
+//         const { amount } = req.body;
+//         if (!amount || amount <= 0) {
+//             return res.status(400).send({ error: true, message: 'Invalid withdrawal amount.' });
+//         }
+
+//         // Find all completed, not withdrawn OrderStatus for this seller
+//         const completedStatuses = await OrderStatus.find({
+//             sellerID: user._id,
+//             status: 'Completed',
+//             withdrawn: { $ne: true },
+//             deletedAt: null
+//         });
+
+//         // Calculate available funds
+//         const orderIDs = completedStatuses.map(s => s.orderID);
+//         const orders = await Order.find({ _id: { $in: orderIDs } });
+//         let availableFunds = 0;
+//         let statusToWithdraw = [];
+//         completedStatuses.forEach(status => {
+//             const order = orders.find(o => o._id.toString() === status.orderID.toString());
+//             if (!order) return;
+//             const gigItem = order.gigs.find(g => g.gigID.toString() === status.gigID.toString() && g.sellerID.toString() === user._id.toString());
+//             if (!gigItem) return;
+//             const amt = gigItem.total || gigItem.price || 0;
+//             availableFunds += amt;
+//             statusToWithdraw.push({ status, amt });
+//         });
+
+//         if (amount > availableFunds) {
+//             return res.status(400).send({ error: true, message: 'Requested amount exceeds available funds.' });
+//         }
+
+//         // Mark enough statuses as withdrawn to cover the amount
+//         let sum = 0;
+//         let statusesToMark = [];
+//         for (let i = 0; i < statusToWithdraw.length; i++) {
+//             if (sum >= amount) break;
+//             sum += statusToWithdraw[i].amt;
+//             statusesToMark.push(statusToWithdraw[i].status._id);
+//         }
+
+//         // Mark as withdrawn
+//         await OrderStatus.updateMany(
+//             { _id: { $in: statusesToMark } },
+//             { $set: { withdrawn: true } }
+//         );
+
+//         // Stripe payout logic
+//         if (!user.stripeAccountId) {
+//             return res.status(400).send({ error: true, message: 'Seller has not completed Stripe onboarding.' });
+//         }
+//         await stripe.transfers.create({
+//             amount: Math.round(sum * 100), // in cents
+//             currency: 'usd',
+//             destination: user.stripeAccountId,
+//             description: `Withdrawal for seller ${user.username} (${user._id})`
+//         });
+
+//         // Create withdrawal record (approved immediately)
+//         const withdrawal = new Withdrawal({
+//             sellerID: user._id,
+//             amount: sum,
+//             status: 'Approved',
+//             processedAt: new Date()
+//         });
+//         await withdrawal.save();
+
+//         // Send withdrawal notification email to seller (approved)
+//         await sendSellerWithdrawalNotificationEmail(
+//             user.email,
+//             user.username,
+//             sum,
+//             'Approved',
+//             withdrawal.processedAt,
+//             transporter
+//         );
+//         // Also send status update email
+//         await sendSellerWithdrawalStatusUpdateEmail(
+//             user.email,
+//             user.username,
+//             sum,
+//             'Approved',
+//             withdrawal.processedAt,
+//             transporter
+//         );
+
+//         return res.send({
+//             error: false,
+//             message: 'Withdrawal processed and paid out via Stripe.',
+//             withdrawal
+//         });
+//     } catch (error) {
+//         return res.status(500).send({ error: true, message: error.message || 'Internal server error.' });
+//     }
+// };
+
+// GET /orders/withdrawals
+const getWithdrawals = async (req, res) => {
+    try {
+        const user = await User.findById(req.userID);
+        if (!user.isSeller) {
+            return res.status(403).send({ error: true, message: 'Only sellers can view withdrawals.' });
+        }
+        const withdrawals = await Withdrawal.find({ sellerID: user._id }).populate('sellerID', 'username email image country').sort({ createdAt: -1 });
+        return res.send({ error: false, withdrawals });
+    } catch (error) {
+        return res.status(500).send({ error: true, message: error.message || 'Internal server error.' });
+    }
+};
+
+// Update getEarningStats to only count available funds as not withdrawn
+const getEarningStats = async (request, response) => {
+    try {
+        const user = await User.findById(request.userID);
+        if (!user.isSeller) {
+            return response.status(403).send({ error: true, message: 'Only sellers can view earnings stats.' });
+        }
+
+        // 1. Find all OrderStatus for this seller
+        const orderStatuses = await OrderStatus.find({ sellerID: user._id, deletedAt: null });
+
+        // 2. Group by orderID+gigID to get latest status for each gig in each order
+        const latestStatusMap = {};
+        orderStatuses.forEach(status => {
+            const key = `${status.orderID}_${status.gigID}`;
+            if (!latestStatusMap[key] || new Date(status.createdAt) > new Date(latestStatusMap[key].createdAt)) {
+                latestStatusMap[key] = status;
+            }
+        });
+
+        // // 3. For each, get the corresponding order and gig info for price
+        // let availableFunds = 0;
+        // let futurePayments = 0;
+        // let totalEarnings = 0;
+
+        // // We'll need to fetch all relevant orders in one go for efficiency
+        // const orderIDs = Array.from(new Set(Object.values(latestStatusMap).map(s => s.orderID)));
+        // const orders = await Order.find({ _id: { $in: orderIDs } });
+        // const orderMap = {};
+        // orders.forEach(order => { orderMap[order._id.toString()] = order; });
+
+        // Object.values(latestStatusMap).forEach(status => {
+        //     const order = orderMap[status.orderID?.toString()];
+        //     if (!order) return;
+        //     // Find the gig in the order's gigs array
+        //     const gigItem = order.gigs.find(g => g.gigID.toString() === status.gigID.toString() && g.sellerID.toString() === user._id.toString());
+        //     if (!gigItem) return;
+        //     const amount = gigItem.total || gigItem.price || 0;
+
+        //     if (status.status === 'Completed' && !status.withdrawn) {
+        //         availableFunds += amount;
+        //         totalEarnings += amount;
+        //     } else if (status.status !== "Canceled" && status.status !== "Completed") {
+        //         futurePayments += amount;
+        //     }
+        // });
+
+        // return response.send({
+        //     availableFunds,
+        //     futurePayments,
+        //     totalEarnings
+        // });
+        
+        let availableFunds = 0;
+        let futurePayments = 0;
+        let totalEarnings = 0;
+
+        const availableStatuses = [];
+        const futureStatuses = [];
+        const totalEarningStatuses = [];
+
+        // Fetch all relevant orders
+        const orderIDs = Array.from(new Set(Object.values(latestStatusMap).map(s => s.orderID)));
+        const orders = await Order.find({ _id: { $in: orderIDs } });
+        const orderMap = {};
+        orders.forEach(order => { orderMap[order._id.toString()] = order; });
+
+        Object.values(latestStatusMap).forEach(status => {
+            const order = orderMap[status.orderID?.toString()];
+            if (!order) return;
+
+            const gigItem = order.gigs.find(g =>
+                g.gigID.toString() === status.gigID.toString() &&
+                g.sellerID.toString() === user._id.toString()
+            );
+            if (!gigItem) return;
+
+            const amount = order.totalAmount || 0;
+            const statusEntry = {
+                ...status._doc,
+                status: status.status,
+                amount,
+                withdrawn: status.withdrawn,
+                gigID: status.gigID,
+                orderID: status.orderID
+            };
+
+            // Accumulate amounts and group statuses
+            if (status.status === 'Completed') {
+                totalEarnings += amount;
+                totalEarningStatuses.push(statusEntry);
+            }
+            if (status.status === 'Completed' && !status.withdrawn) {
+                availableFunds += amount;
+                availableStatuses.push(statusEntry);
+            }
+            if (status.status !== "Canceled" && status.status !== "Completed") {
+                futurePayments += amount;
+                futureStatuses.push(statusEntry);
+            }
+        });
+
+        // Return the response in the requested format
+        return response.send([
+            { availableFunds, statuses: availableStatuses },
+            { futurePayments, statuses: futureStatuses },
+            { totalEarnings, statuses: totalEarningStatuses }
+        ]);
+    } catch (error) {
+        return response.status(500).send({
+            error: true,
+            message: error.message || 'Internal server error.'
+        });
+    }
+};
+
 module.exports = {
-    getOrders,
-    paymentIntent, updateOrderStatus,
-    updatePaymentStatus, createPayment, createOrders, getOrderDetailsById
+    getOrders, getOrderDetailsById, paymentIntent, createPayment, createOrders, updateOrderStatus,
+    updatePaymentStatus, getWithdrawals, getEarningStats
 }
+

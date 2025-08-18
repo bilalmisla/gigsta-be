@@ -35,6 +35,10 @@ const userSchema = new mongoose.Schema({
         type: String,
         required: false,
     },
+    state: {
+        type: String,
+        required: false,
+    },
     phone: {
         type: String,
         required: false,
@@ -48,6 +52,21 @@ const userSchema = new mongoose.Schema({
         required: false,
         default: null
     },
+    fullname: {
+        type: String,
+        required: false,
+        default: null
+    },
+    postalCode: {
+        type: String,
+        required: false,
+        default: null
+    },
+    address: {
+        type: String,
+        required: false,
+        default: null
+    },
     isSeller: {
         type: Boolean,
         default: false,
@@ -57,6 +76,11 @@ const userSchema = new mongoose.Schema({
         type: Boolean, 
         default: false 
     },
+    stripeAccountId: {
+        type: String,
+        required: false
+    },
+    stripeCustomerId: { type: String },
     deletedAt: { // Add this field for soft deletion
         type: Date,
         default: null
