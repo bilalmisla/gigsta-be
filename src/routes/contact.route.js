@@ -16,6 +16,9 @@ const sendContactQueryEmail = async (name, email, subject, message) => {
         to: `${process.env.EMAIL_USER},cassie@gigsta.ai`,
         subject: `${subject}`,
         html: `
+            <div class="logo">
+              <img src="https://gigsta.ai/media/logo-black-text.png" alt="Gigsta AI Logo" />
+            </div>
             <p><strong>Name:</strong> ${name}</p>
             <p><strong>Email:</strong> ${email}</p>
             <p><strong>Subject:</strong> ${subject}</p>

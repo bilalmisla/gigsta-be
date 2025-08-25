@@ -24,6 +24,9 @@ const sendVerificationEmail = async (email, username, token) => {
         to: email,
         subject: 'Action Required: Verify Your Email Address',
         html: `
+            <div class="logo">
+              <img src="https://gigsta.ai/media/logo-black-text.png" alt="Gigsta AI Logo" />
+            </div>
             <p><strong>Hi ${username},</strong></p>
             <p>Thank you for signing up for <a href=${process.env.FRONTEND_URL} target="_blank">Gigsta.ai</a>! Please verify your email by clicking the link below:</p>
             <p><a href="${verificationUrl}" style="style="
@@ -50,6 +53,9 @@ const sendResetPasswordEmail = async (email, username, token) => {
         to: email,
         subject: 'Reset Your Password',
         html: `
+            <div class="logo">
+              <img src="https://gigsta.ai/media/logo-black-text.png" alt="Gigsta AI Logo" />
+            </div>
             <p>Hello <strong>${username}</strong>,</p>
             <p>We received a request to reset your password. Please click the link below to reset it:</p>
             <p><a href="${resetUrl}" target="_blank">${resetUrl}</a></p>
@@ -68,6 +74,9 @@ const sendConfirmationUpdateEmail = async (email, username, token) => {
         to: email,
         subject: 'Update Your Email',
         html: `
+            <div class="logo">
+              <img src="https://gigsta.ai/media/logo-black-text.png" alt="Gigsta AI Logo" />
+            </div>
             <p>Hello <strong>${username}</strong>,</p>
             <p>We received a request to update your email. Please click the link below to update it:</p>
             <p><a href="${resetUrl}" target="_blank" style="padding: 12px 20px; color: #ffffff; text-decoration: none; background-color: #f10Bad; border-radius: 10px;">Update Your Email</a></p>
@@ -85,6 +94,9 @@ const sendConfirmAccountCreatedEmail = async (email, username) => {
         to: email,
         subject: `Welcome to Gigsta AI, ${username}!`,
         html: `
+            <div class="logo">
+              <img src="https://gigsta.ai/media/logo-black-text.png" alt="Gigsta AI Logo" />
+            </div>
             <p>Hi <strong>${username}</strong>,</p>
             <p>Welcome to <a href="${process.env.FRONTEND_URL}" target="_blank">Gigsta AI</a>! We're excited to have you on board.</p>
             <p>Start exploring amazing gigs, connecting with top freelancers, and getting work done effortlessly.</p>
@@ -101,6 +113,9 @@ const sendAccountDeletedEmail = async (email, username) => {
         to: email,
         subject: `Delete account, ${username}!`,
         html: `
+            <div class="logo">
+              <img src="https://gigsta.ai/media/logo-black-text.png" alt="Gigsta AI Logo" />
+            </div>
             <p>Hi <strong>${username}</strong>,</p>
             <p>As per your request, your Gigsta.AI account was deleted.</p>
             <p>We wish you best of luck moving forward.</p>
