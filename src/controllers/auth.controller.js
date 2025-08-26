@@ -167,7 +167,7 @@ const authRegister = async (request, response) => {
         if (err.message.includes('E11000')) {
             return response.status(400).send({
                 error: true,
-                message: 'Choose a unique username!'
+                message: err.message || 'Choose a unique username!'
             });
         }
 
