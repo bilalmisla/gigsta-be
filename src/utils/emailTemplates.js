@@ -17,7 +17,7 @@ const sendBuyerOrderConfirmationEmail = async (
     subject: `✅ Order Confirmed! Your gig "${gigTitle}" is in progress`,
     html: `
       <div class="logo">
-              <img src="https://gigsta.ai/media/logo-black-text.png" alt="Gigsta AI Logo" />
+              <img src="https://gigsta.ai/media/logo-black-text.png" alt="Gigsta AI Logo" style="width: 50px; height: 50px;" />
             </div>
             <p><strong>Hi ${buyerName},</strong></p>
             <p>Thank you for your order on <a href="${process.env.FRONTEND_URL}" target="_blank">Gigsta.ai</a>!</p>
@@ -60,7 +60,7 @@ const sendSellerOrderNotificationEmail = async (
     subject: `🚀 New Order Received: "${gigTitle}"`,
     html: `
       <div class="logo">
-              <img src="https://gigsta.ai/media/logo-black-text.png" alt="Gigsta AI Logo" />
+              <img src="https://gigsta.ai/media/logo-black-text.png" alt="Gigsta AI Logo" style="width: 50px; height: 50px;" />
             </div>
             <p><strong>Hi ${sellerName},</strong></p>
             <p>You’ve received a new order on <a href="${process.env.FRONTEND_URL}" target="_blank">Gigsta.ai</a>!</p>
@@ -100,7 +100,7 @@ const sendSellerWithdrawalNotificationEmail = async (
     subject: `💸 Withdrawal Request Received`,
     html: `
       <div class="logo">
-              <img src="https://gigsta.ai/media/logo-black-text.png" alt="Gigsta AI Logo" />
+              <img src="https://gigsta.ai/media/logo-black-text.png" alt="Gigsta AI Logo" style="width: 50px; height: 50px;" />
             </div>
             <p><strong>Hi ${sellerName},</strong></p>
             <p>We have received your withdrawal request on <strong>${new Date(requestedAt).toLocaleString()}</strong>.</p>
@@ -133,7 +133,7 @@ const sendSellerWithdrawalStatusUpdateEmail = async (
     subject: `Withdrawal ${status === 'Approved' ? 'Approved' : 'Rejected'}`,
     html: `
       <div class="logo">
-              <img src="https://gigsta.ai/media/logo-black-text.png" alt="Gigsta AI Logo" />
+              <img src="https://gigsta.ai/media/logo-black-text.png" alt="Gigsta AI Logo" style="width: 50px; height: 50px;" />
             </div>
             <p><strong>Hi ${sellerName},</strong></p>
             <p>Your withdrawal request for <strong>$${amount}</strong> has been <strong>${status}</strong> on <strong>${new Date(processedAt).toLocaleString()}</strong>.</p>
@@ -167,7 +167,7 @@ const sendAdminWithdrawalNotificationEmail = async (
     subject: `📢 New Withdrawal Request by ${fullName}`,
     html: `
       <div class="logo">
-              <img src="https://gigsta.ai/media/logo-black-text.png" alt="Gigsta AI Logo" />
+              <img src="https://gigsta.ai/media/logo-black-text.png" alt="Gigsta AI Logo" style="width: 50px; height: 50px;" />
             </div>
       <p><strong>Admin,</strong></p>
       <p>A new withdrawal request has been submitted by a seller. Here are the details:</p>
@@ -315,7 +315,7 @@ function generateEmailTemplate(data) {
         <body>
           <div class="container">
             <div class="logo">
-              <img src="${logoUrl}" alt="${companyName} Logo">
+              <img src="${logoUrl}" alt="${companyName} Logo" style="width: 50px; height: 50px;" />
             </div>
             
             <div class="notification">
