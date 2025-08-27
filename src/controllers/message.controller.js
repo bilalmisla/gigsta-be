@@ -2,6 +2,8 @@ const { Message, Conversation, User } = require('../models');
 const nodemailer = require('nodemailer');
 const { formatTimestamp, fetchFileBuffer } = require('../utils');
 const { generateEmailTemplate } = require('../utils/emailTemplates');
+const { createNotification } = require('./notification.controller');
+const { emitToUser } = require('../server-realtime');
 
 const transporter = nodemailer.createTransport({
   service: 'Gmail',
@@ -68,6 +70,23 @@ const createMessage = async (request, response) => {
 
     // console.log(sender, receiver, conversation, "sender & receiver");
     await sendMessageEmail(sender, receiver, conversation, fileUrls);
+    // Create real-time notification to receiver
+    const notif = await createNotification({
+      userId: receiver._id,
+      actorId: sender._id,
+      type: 'chat.message',
+      title: `New message from ${sender.username}`,
+      body: description,
+      metadata: { conversationID }
+    });
+    emitToUser(receiver._id.toString(), 'notification:new', {
+      id: notif._id,
+      type: notif.type,
+      title: notif.title,
+      body: notif.body,
+      metadata: notif.metadata,
+      createdAt: notif.createdAt
+    });
     return response.status(201).send(message);
   }
   catch ({ message, status = 500 }) {

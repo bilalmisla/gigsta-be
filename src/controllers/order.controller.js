@@ -4,6 +4,8 @@ const { sendBuyerOrderConfirmationEmail, sendSellerOrderNotificationEmail, sendS
 const stripe = require('stripe')(process.env.STRIPE_SECRET);
 const nodemailer = require('nodemailer');
 const { sendOrderStatusEmail } = require('../utils/sendOrderStatusEmail');
+const { createNotification } = require('./notification.controller');
+const { emitToUser } = require('../server-realtime');
 
 // const getOrders = async (request, response) => {
 //     try {
@@ -454,7 +456,43 @@ const createOrders = async (request, response) => {
                 });
 
                 await orderStatus.save();
+
+                // Create notifications for seller and buyer
+                const sellerNotification = await createNotification({
+                    userId: gig.sellerID,
+                    actorId: request.userID,
+                    type: 'order.placed',
+                    title: 'New order received',
+                    body: `${buyerName} ordered ${gig.title}`,
+                    metadata: { orderId: order._id, gigId: gig.gigID }
+                });
+                emitToUser(gig.sellerID.toString(), 'notification:new', {
+                    id: sellerNotification._id,
+                    type: sellerNotification.type,
+                    title: sellerNotification.title,
+                    body: sellerNotification.body,
+                    metadata: sellerNotification.metadata,
+                    createdAt: sellerNotification.createdAt
+                });
             }
+
+            // Notify buyer as well
+            const buyerNotification = await createNotification({
+                userId: request.userID,
+                actorId: request.userID,
+                type: 'order.placed',
+                title: 'Order placed successfully',
+                body: `Your order ${order._id} has been created`,
+                metadata: { orderId: order._id }
+            });
+            emitToUser(request.userID.toString(), 'notification:new', {
+                id: buyerNotification._id,
+                type: buyerNotification.type,
+                title: buyerNotification.title,
+                body: buyerNotification.body,
+                metadata: buyerNotification.metadata,
+                createdAt: buyerNotification.createdAt
+            });
         }
 
         return response.send({
@@ -503,6 +541,34 @@ const updateOrderStatus = async (req, res) => {
             });
         }
         await orderStatus.save();
+
+        // Create real-time + stored notification for counterparty
+        try {
+            const buyer = await User.findById(buyerID);
+            const seller = await User.findById(sellerID);
+            const actor = await User.findById(req.userID);
+            const receiverId = req.userID.toString() === buyerID.toString() ? sellerID : buyerID;
+            const title = `Order status: ${status}`;
+            const body = `${actor?.username || 'User'} updated status to "${status}" for ${gigFound.title}`;
+            const notif = await createNotification({
+                userId: receiverId,
+                actorId: req.userID,
+                type: `order.status.${status.replace(/\s+/g, '_').toLowerCase()}`,
+                title,
+                body,
+                metadata: { orderId: orderID, gigId: gigID, status }
+            });
+            emitToUser(receiverId.toString(), 'notification:new', {
+                id: notif._id,
+                type: notif.type,
+                title: notif.title,
+                body: notif.body,
+                metadata: notif.metadata,
+                createdAt: notif.createdAt
+            });
+        } catch (e) {
+            // fail-soft on notification creation
+        }
 
         // Send notification email to counterparty
         await sendOrderStatusEmail(

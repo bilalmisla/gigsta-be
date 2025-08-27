@@ -6,6 +6,7 @@ const Order = require('./order.model');
 const Review = require('./review.model');
 const OrderStatus = require('./orderStatus.model');
 const Withdrawal = require('./withdrawal.model');
+const Notification = require('./notification.model');
 const PaymentMethod = require('./paymentMethod.model');
 
 module.exports = {
@@ -17,5 +18,6 @@ module.exports = {
     Review,
     OrderStatus,
     Withdrawal,
-    PaymentMethod
+    PaymentMethod,
+    Notification
 }
