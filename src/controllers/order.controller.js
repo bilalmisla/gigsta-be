@@ -519,7 +519,13 @@ const updateOrderStatus = async (req, res) => {
         }
 
         const user = await User.findById(req.userID);
-        // console.log(user, "user");
+        const buyer = await User.findById(buyerID);
+        const seller = await User.findById(sellerID);
+        
+        if (!buyer || !seller) {
+            return res.status(404).send({ error: true, message: 'Buyer or seller not found.' });
+        }
+
         // Update status
         let orderStatus;
         if (status === "Revision Requested") {
@@ -544,12 +550,11 @@ const updateOrderStatus = async (req, res) => {
 
         // Create real-time + stored notification for counterparty
         try {
-            const buyer = await User.findById(buyerID);
-            const seller = await User.findById(sellerID);
-            const actor = await User.findById(req.userID);
             const receiverId = req.userID.toString() === buyerID.toString() ? sellerID : buyerID;
+            const receiver = await User.findById(receiverId);
             const title = `Order status: ${status}`;
-            const body = `${actor?.username || 'User'} updated status to "${status}" for ${gigFound.title}`;
+            const body = `${user?.username || 'User'} updated status to "${status}" for ${gigFound.title}`;
+            
             const notif = await createNotification({
                 userId: receiverId,
                 actorId: req.userID,
@@ -558,6 +563,8 @@ const updateOrderStatus = async (req, res) => {
                 body,
                 metadata: { orderId: orderID, gigId: gigID, status }
             });
+            
+            // Emit real-time notification to counterparty
             emitToUser(receiverId.toString(), 'notification:new', {
                 id: notif._id,
                 type: notif.type,
@@ -566,18 +573,20 @@ const updateOrderStatus = async (req, res) => {
                 metadata: notif.metadata,
                 createdAt: notif.createdAt
             });
-        } catch (e) {
-            // fail-soft on notification creation
-        }
 
-        // Send notification email to counterparty
-        await sendOrderStatusEmail(
-            user,
-            gigFound.userID,
-            gigFound.title,
-            status,
-            gigFound._id // or order._id based on your frontend routing
-        );
+            // Send email notification to counterparty
+            await sendOrderStatusEmail(
+                user,
+                receiver,
+                gigFound.title,
+                status,
+                orderID
+            );
+
+        } catch (e) {
+            console.error('Error creating notification:', e);
+            // Continue execution even if notification fails
+        }
 
         return res.send({
             error: false,

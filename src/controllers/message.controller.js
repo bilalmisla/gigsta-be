@@ -133,6 +133,36 @@ const deleteMessage = async (request, response) => {
       { $set: { [updateField]: true } },
       { new: true }
     );
+
+    // Create notifications for both parties about message deletion
+    try {
+      const conversation = await Conversation.findOne({ conversationID: messageID });
+      if (conversation) {
+        const actor = await User.findById(request.userID);
+        const receiverId = request.isSeller ? conversation.buyerID : conversation.sellerID;
+
+        const notification = await createNotification({
+          userId: receiverId,
+          actorId: request.userID,
+          type: 'message.deleted',
+          title: 'Message deleted',
+          body: `${actor?.username || 'User'} deleted a message in your conversation`,
+          metadata: { conversationID: messageID }
+        });
+
+        emitToUser(receiverId.toString(), 'notification:new', {
+          id: notification._id,
+          type: notification.type,
+          title: notification.title,
+          body: notification.body,
+          metadata: notification.metadata,
+          createdAt: notification.createdAt
+        });
+      }
+    } catch (e) {
+      console.error('Error creating message deletion notification:', e);
+      // Continue execution even if notification fails
+    }
     
     return response.status(200).send({
       success: true,
@@ -167,6 +197,33 @@ const deleteConversation = async (request, response) => {
       { $set: { [updateField]: true } },
       { new: true }
     );
+
+    // Create notifications for both parties about conversation deletion
+    try {
+      const actor = await User.findById(request.userID);
+      const receiverId = request.isSeller ? conversation.buyerID : conversation.sellerID;
+
+      const notification = await createNotification({
+        userId: receiverId,
+        actorId: request.userID,
+        type: 'conversation.deleted',
+        title: 'Conversation deleted',
+        body: `${actor?.username || 'User'} deleted the conversation`,
+        metadata: { conversationID: conversationID }
+      });
+
+      emitToUser(receiverId.toString(), 'notification:new', {
+        id: notification._id,
+        type: notification.type,
+        title: notification.title,
+        body: notification.body,
+        metadata: notification.metadata,
+        createdAt: notification.createdAt
+      });
+    } catch (e) {
+      console.error('Error creating conversation deletion notification:', e);
+      // Continue execution even if notification fails
+    }
     
     return response.status(200).send({
       success: true,
