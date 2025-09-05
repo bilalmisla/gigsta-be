@@ -17,58 +17,58 @@ const createConversation = async (request, response) => {
         await conversation.save();
 
         // Create notifications for both buyer and seller
-        try {
-            const seller = await User.findById(conversation.sellerID);
-            const buyer = await User.findById(conversation.buyerID);
-            const actor = await User.findById(request.userID);
+        // try {
+        //     const seller = await User.findById(conversation.sellerID);
+        //     const buyer = await User.findById(conversation.buyerID);
+        //     const actor = await User.findById(request.userID);
 
-            if (seller && buyer) {
-                // Notify seller about new conversation (if buyer initiated)
-                if (!request.isSeller) {
-                    const sellerNotification = await createNotification({
-                        userId: conversation.sellerID,
-                        actorId: request.userID,
-                        type: 'conversation.created',
-                        title: 'New conversation started',
-                        body: `${actor?.username || 'Buyer'} started a new conversation with you`,
-                        metadata: { conversationID: conversation.conversationID, gigId: gigId, orderId: orderId }
-                    });
+        //     if (seller && buyer) {
+        //         // Notify seller about new conversation (if buyer initiated)
+        //         if (!request.isSeller) {
+        //             const sellerNotification = await createNotification({
+        //                 userId: conversation.sellerID,
+        //                 actorId: request.userID,
+        //                 type: 'conversation.created',
+        //                 title: 'New conversation started',
+        //                 body: `${actor?.username || 'Buyer'} started a new conversation with you`,
+        //                 metadata: { conversationID: conversation.conversationID, gigId: gigId, orderId: orderId }
+        //             });
 
-                    emitToUser(conversation.sellerID.toString(), 'notification:new', {
-                        id: sellerNotification._id,
-                        type: sellerNotification.type,
-                        title: sellerNotification.title,
-                        body: sellerNotification.body,
-                        metadata: sellerNotification.metadata,
-                        createdAt: sellerNotification.createdAt
-                    });
-                }
+        //             emitToUser(conversation.sellerID.toString(), 'notification:new', {
+        //                 id: sellerNotification._id,
+        //                 type: sellerNotification.type,
+        //                 title: sellerNotification.title,
+        //                 body: sellerNotification.body,
+        //                 metadata: sellerNotification.metadata,
+        //                 createdAt: sellerNotification.createdAt
+        //             });
+        //         }
 
-                // Notify buyer about new conversation (if seller initiated)
-                if (request.isSeller) {
-                    const buyerNotification = await createNotification({
-                        userId: conversation.buyerID,
-                        actorId: request.userID,
-                        type: 'conversation.created',
-                        title: 'New conversation started',
-                        body: `${actor?.username || 'Seller'} started a new conversation with you`,
-                        metadata: { conversationID: conversation.conversationID, gigId: gigId, orderId: orderId }
-                    });
+        //         // Notify buyer about new conversation (if seller initiated)
+        //         if (request.isSeller) {
+        //             const buyerNotification = await createNotification({
+        //                 userId: conversation.buyerID,
+        //                 actorId: request.userID,
+        //                 type: 'conversation.created',
+        //                 title: 'New conversation started',
+        //                 body: `${actor?.username || 'Seller'} started a new conversation with you`,
+        //                 metadata: { conversationID: conversation.conversationID, gigId: gigId, orderId: orderId }
+        //             });
 
-                    emitToUser(conversation.buyerID.toString(), 'notification:new', {
-                        id: buyerNotification._id,
-                        type: buyerNotification.type,
-                        title: buyerNotification.title,
-                        body: buyerNotification.body,
-                        metadata: buyerNotification.metadata,
-                        createdAt: buyerNotification.createdAt
-                    });
-                }
-            }
-        } catch (e) {
-            console.error('Error creating conversation notification:', e);
-            // Continue execution even if notification fails
-        }
+        //             emitToUser(conversation.buyerID.toString(), 'notification:new', {
+        //                 id: buyerNotification._id,
+        //                 type: buyerNotification.type,
+        //                 title: buyerNotification.title,
+        //                 body: buyerNotification.body,
+        //                 metadata: buyerNotification.metadata,
+        //                 createdAt: buyerNotification.createdAt
+        //             });
+        //         }
+        //     }
+        // } catch (e) {
+        //     console.error('Error creating conversation notification:', e);
+        //     // Continue execution even if notification fails
+        // }
 
         return response.status(201).send(conversation);
     }
