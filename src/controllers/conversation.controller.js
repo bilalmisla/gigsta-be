@@ -4,7 +4,7 @@ const { createNotification } = require('./notification.controller');
 const { emitToUser } = require('../server-realtime');
 
 const createConversation = async (request, response) => {
-    const { to, from } = request.body;
+    const { to, from, gigId, orderId } = request.body;
 
     try {
         const conversation = new Conversation({
@@ -31,7 +31,7 @@ const createConversation = async (request, response) => {
                         type: 'conversation.created',
                         title: 'New conversation started',
                         body: `${actor?.username || 'Buyer'} started a new conversation with you`,
-                        metadata: { conversationID: conversation.conversationID }
+                        metadata: { conversationID: conversation.conversationID, gigId: gigId, orderId: orderId }
                     });
 
                     emitToUser(conversation.sellerID.toString(), 'notification:new', {
@@ -52,7 +52,7 @@ const createConversation = async (request, response) => {
                         type: 'conversation.created',
                         title: 'New conversation started',
                         body: `${actor?.username || 'Seller'} started a new conversation with you`,
-                        metadata: { conversationID: conversation.conversationID }
+                        metadata: { conversationID: conversation.conversationID, gigId: gigId, orderId: orderId }
                     });
 
                     emitToUser(conversation.buyerID.toString(), 'notification:new', {

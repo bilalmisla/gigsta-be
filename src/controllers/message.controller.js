@@ -42,7 +42,7 @@ const sendMessageEmail = async (sender, receiver, conversation, fileUrls) => {
 };
 
 const createMessage = async (request, response) => {
-  const { conversationID, description, fileUrls } = request.body;
+  const { conversationID, description, fileUrls, gigId, orderId } = request.body;
 
   try {
     const message = new Message({
@@ -77,7 +77,7 @@ const createMessage = async (request, response) => {
       type: 'chat.message',
       title: `New message from ${sender.username}`,
       body: description,
-      metadata: { conversationID }
+      metadata: { conversationID, gigId, orderId }
     });
     emitToUser(receiver._id.toString(), 'notification:new', {
       id: notif._id,

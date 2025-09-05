@@ -509,7 +509,7 @@ const createOrders = async (request, response) => {
 };
 
 const updateOrderStatus = async (req, res) => {
-    const { buyerID, sellerID, status, orderID, gigID } = req.body;
+    const { buyerID, sellerID, status, orderID, gigID, conversationID } = req.body;
 
     try {
         // Fetch related gig with buyer and seller populated
@@ -561,7 +561,7 @@ const updateOrderStatus = async (req, res) => {
                 type: `order.status.${status.replace(/\s+/g, '_').toLowerCase()}`,
                 title,
                 body,
-                metadata: { orderId: orderID, gigId: gigID, status }
+                metadata: { orderId: orderID, gigId: gigID, status, conversationID }
             });
             
             // Emit real-time notification to counterparty
