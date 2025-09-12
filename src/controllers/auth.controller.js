@@ -140,7 +140,7 @@ const authRegister = async (request, response) => {
         }
 
         const user = new User({
-            username,
+            username: username.toLowerCase(),
             email,
             password: hash,
             image,
@@ -247,7 +247,7 @@ const handleSocialLogin = async (credential, isSeller, res) => {
         if (user) {
             user.deletedAt = null;
             user.googleId = payload.sub;
-            user.username = payload.name;
+            user.username = payload.name.toLowerCase();
             user.image = payload.picture;
             user.isVerified = payload.email_verified;
             user.isSeller = isSeller;
@@ -298,7 +298,7 @@ const handleSocialLogin = async (credential, isSeller, res) => {
 };
 
 const handleDefaultLogin = async (username, password, res) => {
-    const user = await User.findOne({ username });
+    const user = await User.findOne({ username: username.toLowerCase() });
     if (!user) throw CustomException('Check username or password!', 404);
 
     if (!user.isVerified) {
@@ -482,7 +482,7 @@ const authUpdateProfile = async (request, response) => {
             responseMsg = "Your profile has been successfully updated."
         }
 
-        user.username = username;
+        user.username = username.toLowerCase();
         user.description = description;
         user.image = image;
         user.tagline = tagline;
@@ -721,7 +721,7 @@ const handleFetchEarnings = async (req, res) => {
     try {
         const { username } = req.params;
 
-        const user = await User.findOne({ username: username });
+        const user = await User.findOne({ username: username.toLowerCase() });
         if (!user) {
             throw CustomException('User not found!', 404);
         }

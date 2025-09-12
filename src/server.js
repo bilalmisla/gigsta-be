@@ -5,11 +5,13 @@ const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const connect = require('./configs/db');
 const PORT = 8080;
+const http = require('http');
+const { initSocket } = require('./server-realtime');
 
 // Other Route files
 const { 
     userRoute, conversationRoute, gigRoute, messageRoute, 
-    orderRoute, reviewRoute, authRoute, contactRoute, paymentMethodRoute 
+    orderRoute, reviewRoute, authRoute, contactRoute, paymentMethodRoute, notificationRoute 
 } = require('./routes');
 const { OrderStatus } = require('./models');
 const autoUpdateCollections = require('./utils/autoUpdateCollections');
@@ -37,6 +39,7 @@ app.use('/api/messages', messageRoute);
 app.use('/api/reviews', reviewRoute);
 app.use('/api/submit-form', contactRoute);
 app.use('/api/pm', paymentMethodRoute);
+app.use('/api/notifications', notificationRoute);
 
 // const updateAllRecords = async () => {
 //     const result = await OrderStatus.updateMany({}, { $set: { revisionRequestedCount: 0 } });
@@ -57,7 +60,10 @@ app.get('/ip', (request, response) => {
     return response.send({ ip: ips[0] });
 })
 
-app.listen(PORT, async () => {
+const server = http.createServer(app);
+initSocket(server);
+
+server.listen(PORT, async () => {
     try {
         await connect();
         console.log(`🚀 Listening at http://localhost:${PORT}`);

@@ -2,6 +2,8 @@ const { Message, Conversation, User } = require('../models');
 const nodemailer = require('nodemailer');
 const { formatTimestamp, fetchFileBuffer } = require('../utils');
 const { generateEmailTemplate } = require('../utils/emailTemplates');
+const { createNotification } = require('./notification.controller');
+const { emitToUser } = require('../server-realtime');
 
 const transporter = nodemailer.createTransport({
   service: 'Gmail',
@@ -40,7 +42,7 @@ const sendMessageEmail = async (sender, receiver, conversation, fileUrls) => {
 };
 
 const createMessage = async (request, response) => {
-  const { conversationID, description, fileUrls } = request.body;
+  const { conversationID, description, fileUrls, gigId, orderId } = request.body;
 
   try {
     const message = new Message({
@@ -68,6 +70,23 @@ const createMessage = async (request, response) => {
 
     // console.log(sender, receiver, conversation, "sender & receiver");
     await sendMessageEmail(sender, receiver, conversation, fileUrls);
+    // Create real-time notification to receiver
+    const notif = await createNotification({
+      userId: receiver._id,
+      actorId: sender._id,
+      type: 'chat.message',
+      title: `New message from ${sender.username}`,
+      body: description,
+      metadata: { conversationID, gigId, orderId }
+    });
+    emitToUser(receiver._id.toString(), 'notification:new', {
+      id: notif._id,
+      type: notif.type,
+      title: notif.title,
+      body: notif.body,
+      metadata: notif.metadata,
+      createdAt: notif.createdAt
+    });
     return response.status(201).send(message);
   }
   catch ({ message, status = 500 }) {
@@ -114,6 +133,36 @@ const deleteMessage = async (request, response) => {
       { $set: { [updateField]: true } },
       { new: true }
     );
+
+    // Create notifications for both parties about message deletion
+    try {
+      const conversation = await Conversation.findOne({ conversationID: messageID });
+      if (conversation) {
+        const actor = await User.findById(request.userID);
+        const receiverId = request.isSeller ? conversation.buyerID : conversation.sellerID;
+
+        const notification = await createNotification({
+          userId: receiverId,
+          actorId: request.userID,
+          type: 'message.deleted',
+          title: 'Message deleted',
+          body: `${actor?.username || 'User'} deleted a message in your conversation`,
+          metadata: { conversationID: messageID }
+        });
+
+        emitToUser(receiverId.toString(), 'notification:new', {
+          id: notification._id,
+          type: notification.type,
+          title: notification.title,
+          body: notification.body,
+          metadata: notification.metadata,
+          createdAt: notification.createdAt
+        });
+      }
+    } catch (e) {
+      console.error('Error creating message deletion notification:', e);
+      // Continue execution even if notification fails
+    }
     
     return response.status(200).send({
       success: true,
@@ -148,6 +197,33 @@ const deleteConversation = async (request, response) => {
       { $set: { [updateField]: true } },
       { new: true }
     );
+
+    // Create notifications for both parties about conversation deletion
+    try {
+      const actor = await User.findById(request.userID);
+      const receiverId = request.isSeller ? conversation.buyerID : conversation.sellerID;
+
+      const notification = await createNotification({
+        userId: receiverId,
+        actorId: request.userID,
+        type: 'conversation.deleted',
+        title: 'Conversation deleted',
+        body: `${actor?.username || 'User'} deleted the conversation`,
+        metadata: { conversationID: conversationID }
+      });
+
+      emitToUser(receiverId.toString(), 'notification:new', {
+        id: notification._id,
+        type: notification.type,
+        title: notification.title,
+        body: notification.body,
+        metadata: notification.metadata,
+        createdAt: notification.createdAt
+      });
+    } catch (e) {
+      console.error('Error creating conversation deletion notification:', e);
+      // Continue execution even if notification fails
+    }
     
     return response.status(200).send({
       success: true,
