@@ -3,7 +3,7 @@ const { userMiddleware } = require('../middlewares');
 const { 
     getOrders, paymentIntent, updatePaymentStatus, 
     createOrders, createPayment, 
-    getOrderDetailsById, updateOrderStatus, getEarningStats, requestWithdrawal, getWithdrawals 
+    getOrderDetailsById, updateOrderStatus, getEarningStats, requestWithdrawal, getWithdrawals, updateOrderDetails 
 } = require('../controllers/order.controller');
 const app = express.Router();
 
@@ -26,6 +26,9 @@ app.post('/create-payment', userMiddleware, createPayment);
 app.post('/update-status', userMiddleware, updateOrderStatus);
 
 app.post('/create', userMiddleware, createOrders);
+
+// Update order details (e.g., deliveryDate)
+app.patch('/:id/:gigID', userMiddleware, updateOrderDetails);
 
 // Earnings stats for seller
 app.get('/earnings-stats', userMiddleware, getEarningStats);

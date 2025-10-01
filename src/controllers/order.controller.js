@@ -758,9 +758,114 @@ const getEarningStats = async (request, response) => {
         });
     }
 };
+// PATCH /orders/:id/:gigID
+// Buyer can update deliveryDate
+// Seller can only request extension (sets status = "Extend Delivery Date")
+const updateOrderDetails = async (req, res) => {
+    try {
+        const { id, gigID } = req.params;
+        const { deliveryDate } = req.body;
+
+        if (!id) {
+            return res.status(400).send({ error: true, message: 'Order id is required.' });
+        }
+
+        const order = await Order.findById(id)
+            .populate('buyerID', '_id username email')
+            .populate('gigs.sellerID', '_id username email');
+
+        if (!order) {
+            return res.status(404).send({ error: true, message: 'Order not found.' });
+        }
+
+        // ✅ Load current user and check role
+        const user = await User.findById(req.userID);
+        if (!user) {
+            return res.status(401).send({ error: true, message: 'Unauthorized: user not found.' });
+        }
+
+        const userId = user._id.toString();
+        const isBuyer = order.buyerID?._id?.toString() === userId;
+
+        // --- CASE 2: Buyer updates deliveryDate ---
+        if (isBuyer && deliveryDate) {
+            const parsed = new Date(deliveryDate);
+            if (isNaN(parsed.getTime())) {
+                return res.status(400).send({ error: true, message: 'Invalid deliveryDate. Expect ISO date string.' });
+            }
+
+            order.deliveryDate = parsed;
+            await order.save();
+            const formattedDate = parsed.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+
+            // Notify + Email buyer (optional self-notification)
+            const buyerNotif = await createNotification({
+                userId: order.buyerID._id,
+                actorId: userId,
+                type: `order.status.delivery_updated`,
+                title: `Order status: Delivery Updated`,
+                body: `${user.username || 'Buyer'} updated delivery date to ${formattedDate}`,
+                metadata: { orderId: order._id, deliveryDate: order.deliveryDate }
+            });
+            emitToUser(order.buyerID._id.toString(), 'notification:new', {
+                id: buyerNotif._id,
+                type: buyerNotif.type,
+                title: buyerNotif.title,
+                body: buyerNotif.body,
+                metadata: buyerNotif.metadata,
+                createdAt: buyerNotif.createdAt
+            });
+
+            await sendOrderStatusEmail(user, order.buyerID, 'Order Updated', 'Delivery Date Updated', order._id);
+
+            // Notify + Email each seller
+            const uniqueSellers = Array.from(new Set(order.gigs.map(g => g.sellerID?._id?.toString()).filter(Boolean)));
+            for (const sellerId of uniqueSellers) {
+                const seller = order.gigs.find(g => g?.sellerID?._id?.toString() === sellerId)?.sellerID;
+                if (!seller) continue;
+
+                const sellerNotif = await createNotification({
+                    userId: seller._id,
+                    actorId: userId,
+                    type: `order.status.delivery_updated`,
+                    title: `Order status: Delivery Updated`,
+                    body: `${user.username || 'Buyer'} updated delivery date to ${formattedDate}`,
+                    metadata: { orderId: order._id, deliveryDate: order.deliveryDate }
+                });
+                emitToUser(seller._id.toString(), 'notification:new', {
+                    id: sellerNotif._id,
+                    type: sellerNotif.type,
+                    title: sellerNotif.title,
+                    body: sellerNotif.body,
+                    metadata: sellerNotif.metadata,
+                    createdAt: sellerNotif.createdAt
+                });
+
+                await sendOrderStatusEmail(user, seller, 'Order Updated', 'Delivery Date Updated', order._id);
+                
+                const orderStatus = new OrderStatus({
+                    buyerID: order.buyerID,
+                    sellerID: seller._id,
+                    status: "In Progress",
+                    orderID: order._id,
+                    gigID: gigID
+                });
+                await orderStatus.save();
+            }
+
+            return res.send({ error: false, message: 'Delivery date updated.', order });
+        }
+
+        return res.status(403).send({ error: true, message: 'Not authorized for this action.' });
+
+    } catch (error) {
+        console.error('updateOrderDetails error:', error);
+        return res.status(500).send({ error: true, message: error.message || 'Internal server error.' });
+    }
+};
 
 module.exports = {
     getOrders, getOrderDetailsById, paymentIntent, createPayment, createOrders, updateOrderStatus,
-    updatePaymentStatus, getWithdrawals, getEarningStats
+    updatePaymentStatus, getWithdrawals, getEarningStats, updateOrderDetails
 }
 
