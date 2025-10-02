@@ -78,11 +78,23 @@ const getOrders = async (request, response) => {
             statusesMap[key].push(status);
         });
 
-        // Attach statuses to each order
-        const enrichedOrders = updatedOrders.map(order => ({
-            ...order,
-            orderStatuses: statusesMap[order._id.toString()] || []
-        }));
+        // Attach statuses + current status to each order
+        const enrichedOrders = updatedOrders.map(order => {
+            const statuses = statusesMap[order._id.toString()] || [];
+
+            // sort statuses by createdAt (or updatedAt if that's what you want)
+            const sortedStatuses = statuses.sort(
+                (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
+            );
+
+            const currentStatus = sortedStatuses.length > 0 ? sortedStatuses[sortedStatuses.length - 1] : null;
+
+            return {
+                ...order,
+                orderStatuses: sortedStatuses,
+                currentStatus
+            };
+        });
 
         return response.send(enrichedOrders);
     }
@@ -128,7 +140,7 @@ const getOrderDetailsById = async (request, response) => {
         const orderStatuses = await OrderStatus.find({
             orderID: order._doc._id,
             deletedAt: null
-        }).sort({ createdAt: -1 }).lean();
+        }).sort({ createdAt: -1 });
         const currentStatus = await OrderStatus.findOne({
             orderID: order._doc._id,
             deletedAt: null
@@ -554,7 +566,7 @@ const updateOrderStatus = async (req, res) => {
             const receiver = await User.findById(receiverId);
             const title = `Order status: ${status}`;
             const body = `${user?.username || 'User'} updated status to "${status}" for ${gigFound.title}`;
-            
+            console.log(receiver, title, "title");
             const notif = await createNotification({
                 userId: receiverId,
                 actorId: req.userID,
@@ -844,12 +856,13 @@ const updateOrderDetails = async (req, res) => {
                 await sendOrderStatusEmail(user, seller, 'Order Updated', 'Delivery Date Updated', order._id);
                 
                 const orderStatus = new OrderStatus({
-                    buyerID: order.buyerID,
+                    buyerID: req.userID,
                     sellerID: seller._id,
                     status: "In Progress",
                     orderID: order._id,
                     gigID: gigID
                 });
+
                 await orderStatus.save();
             }
 
