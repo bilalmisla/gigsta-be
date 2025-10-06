@@ -19,7 +19,7 @@ const deleteUser = async (request, response) => {
     try {
         const user = await User.findOne({ _id });
 
-        if(request.userID === user._id.toString()) {
+        if (request.userID === user._id.toString()) {
             await User.deleteOne({ _id });
             return response.send({
                 error: false,
@@ -29,7 +29,7 @@ const deleteUser = async (request, response) => {
 
         throw CustomException('Invalid request!. Cannot delete other user accounts.', 403);
     }
-    catch({message, status = 500}) {
+    catch ({ message, status = 500 }) {
         return response.status(status).send({
             error: true,
             message
@@ -222,7 +222,29 @@ const withdrawSellerFunds = async (req, res) => {
     }
 };
 
+// Convert seller to agency
+const convertToAgency = async (req, res) => {
+    try {
+        const user = await User.findById(req.userID);
+        if (!user) return res.status(404).json({ message: "User not found" });
+        if (!user.isSeller) return res.status(400).json({ message: "Only sellers can convert" });
+
+        // If already agency
+        if (user.sellerType === "agency") {
+            return res.status(400).json({ message: "Already an agency" });
+        }
+
+        user.sellerType = "agency";
+        await user.save();
+
+        res.json({ message: "Profile converted to Agency successfully", user });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Server error" });
+    }
+};
+
 module.exports = {
-    deleteUser, fetchTopSellers, createStripeAccountLink, addSellerIban, withdrawSellerFunds
+    deleteUser, fetchTopSellers, createStripeAccountLink, addSellerIban, withdrawSellerFunds, convertToAgency
 }
 

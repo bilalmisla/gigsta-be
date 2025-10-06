@@ -81,6 +81,12 @@ const userSchema = new mongoose.Schema({
         required: false
     },
     stripeCustomerId: { type: String },
+    sellerType: {
+        type: String,
+        enum: ["agency", "student", null],
+        default: null,
+    },
+    agencyId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     deletedAt: { // Add this field for soft deletion
         type: Date,
         default: null
