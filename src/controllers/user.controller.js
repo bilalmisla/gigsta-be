@@ -244,7 +244,31 @@ const convertToAgency = async (req, res) => {
     }
 };
 
+// Convert seller to agency
+const convertToSeller = async (req, res) => {
+    try {
+        const user = await User.findById(req.userID);
+        if (!user) return res.status(404).json({ message: "User not found" });
+        if (!user.isSeller) return res.status(400).json({ message: "Only sellers can convert" });
+
+        // If already agency
+        if (user.sellerType !== "agency") {
+            return res.status(400).json({ message: "You are not an agency" });
+        }
+
+        user.sellerType = null;
+        user.agencyId = null;
+        await user.save();
+
+        res.json({ message: "Profile converted back to Seller successfully", user });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Server error" });
+    }
+};
+
 module.exports = {
-    deleteUser, fetchTopSellers, createStripeAccountLink, addSellerIban, withdrawSellerFunds, convertToAgency
+    deleteUser, fetchTopSellers, createStripeAccountLink, 
+    addSellerIban, withdrawSellerFunds, convertToAgency, convertToSeller
 }
 
