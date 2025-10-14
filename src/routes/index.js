@@ -8,6 +8,7 @@ const authRoute = require('./auth.route');
 const contactRoute = require('./contact.route');
 const paymentMethodRoute = require('./paymentMethod.route');
 const notificationRoute = require('./notification.route');
+const studentInviteRoute = require('./studentInvite.route');
 
 module.exports = {
     authRoute,
@@ -19,5 +20,6 @@ module.exports = {
     reviewRoute,
     contactRoute,
     paymentMethodRoute,
-    notificationRoute
+    notificationRoute,
+    studentInviteRoute
 }
