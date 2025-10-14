@@ -266,23 +266,34 @@ const acceptInviteAndRegister = async (request, response) => {
         invite.acceptedAt = new Date();
         invite.studentId = savedStudent._id;
         await invite.save();
-
-        // Generate JWT token
-        const jwt = require('jsonwebtoken');
-        const authToken = jwt.sign({ userId: savedStudent._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
+        
+        // const authToken = jwt.sign({ userId: savedStudent._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
+        const authToken = jwt.sign({ _id: savedStudent._id, isSeller: savedStudent.isSeller }, process.env.JWT_SECRET, { expiresIn: '7d' });
 
         // Remove password from response
         const studentResponse = savedStudent.toObject();
         delete studentResponse.password;
+        
+    
+        const cookieConfig = {
+            httpOnly: true,
+            sameSite: process.env.NODE_ENV === 'development' ? 'lax' : 'none',
+            secure: process.env.NODE_ENV !== 'development',
+            maxAge: 60 * 60 * 24 * 7 * 1000,
+            path: '/'
+        };
 
-        return response.status(201).send({
-            error: false,
-            message: 'Student account created successfully.',
-            data: {
-                user: studentResponse,
-                token: authToken
-            }
-        });
+        return response.cookie('accessToken', authToken, cookieConfig)
+            .status(202)
+            .send({ error: false, message: 'Student account created successfully!', user: { ...studentResponse, token: authToken } });
+        // return response.status(201).send({
+        //     error: false,
+        //     message: 'Student account created successfully.',
+        //     data: {
+        //         user: studentResponse,
+        //         token: authToken
+        //     }
+        // });
 
     } catch (error) {
         return response.status(error.status || 500).send({
