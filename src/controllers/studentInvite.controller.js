@@ -328,9 +328,47 @@ const getStudentsByAgency = async (request, response) => {
     }
 };
 
+// Soft delete a student belonging to the authenticated agency
+const deleteStudentByAgency = async (request, response) => {
+    const agencyId = request.userID;
+    const { id: studentId } = request.params;
+
+    try {
+        if (!studentId) {
+            throw CustomException('Student id is required.', 400);
+        }
+
+        // Ensure the student belongs to the agency and is a student, not already deleted
+        const student = await User.findOne({
+            _id: studentId,
+            agencyId,
+            sellerType: 'student',
+            deletedAt: null
+        });
+
+        if (!student) {
+            throw CustomException('Student not found.', 404);
+        }
+
+        student.deletedAt = new Date();
+        await student.save();
+
+        return response.status(200).send({
+            error: false,
+            message: 'Student deleted successfully.'
+        });
+    } catch (error) {
+        return response.status(error.status || 500).send({
+            error: true,
+            message: error.message
+        });
+    }
+};
+
 module.exports = {
     sendInvitesToStudents,
     verifyInviteToken,
     acceptInviteAndRegister,
-    getStudentsByAgency
+    getStudentsByAgency,
+    deleteStudentByAgency
 };
