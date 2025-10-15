@@ -18,7 +18,7 @@ const userMiddleware = (request, response, next) => {
         if(verification) {
             request.userID = verification._id;
             request.isSeller = verification.isSeller;
-            
+            request.token = token;
             return next();
         }
         
