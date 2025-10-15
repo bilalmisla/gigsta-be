@@ -4,7 +4,8 @@ const {
     sendInvitesToStudents, 
     verifyInviteToken, 
     acceptInviteAndRegister,
-    getStudentsByAgency 
+    getStudentsByAgency, 
+    deleteStudentByAgency
 } = require('../controllers/studentInvite.controller');
 
 const app = express.Router();
@@ -20,5 +21,8 @@ app.post('/accept-invite', acceptInviteAndRegister);
 
 // Get students by agency (requires authentication)
 app.get('/students', userMiddleware, getStudentsByAgency);
+
+// Delete student by id (soft delete, requires authentication)
+app.delete('/students/:id', userMiddleware, deleteStudentByAgency);
 
 module.exports = app;
