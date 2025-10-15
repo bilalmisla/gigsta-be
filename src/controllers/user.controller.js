@@ -237,7 +237,7 @@ const convertToAgency = async (req, res) => {
         user.sellerType = "agency";
         await user.save();
 
-        res.json({ message: "Profile converted to Agency successfully", user: { ...user, token: req.token } });
+        res.json({ message: "Profile converted to Agency successfully", user });
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: "Server error" });
@@ -260,7 +260,7 @@ const convertToSeller = async (req, res) => {
         user.agencyId = null;
         await user.save();
 
-        res.json({ message: "Profile converted back to Seller successfully", user: { ...user, token: req.token } });
+        res.json({ message: "Profile converted back to Seller successfully", user });
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: "Server error" });
