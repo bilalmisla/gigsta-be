@@ -5,6 +5,8 @@ const {
     verifyInviteToken, 
     acceptInviteAndRegister,
     getStudentsByAgency, 
+    getActiveStudentsByAgency,
+    getPendingStudentsByAgency,
     deleteStudentByAgency
 } = require('../controllers/studentInvite.controller');
 
@@ -21,6 +23,12 @@ app.post('/accept-invite', acceptInviteAndRegister);
 
 // Get students by agency (requires authentication)
 app.get('/students', userMiddleware, getStudentsByAgency);
+
+// Get ACTIVE students by agency (requires authentication)
+app.get('/students/active', userMiddleware, getActiveStudentsByAgency);
+
+// Get PENDING students by agency (requires authentication)
+app.get('/students/pending', userMiddleware, getPendingStudentsByAgency);
 
 // Delete student by id (soft delete, requires authentication)
 app.delete('/students/:id', userMiddleware, deleteStudentByAgency);

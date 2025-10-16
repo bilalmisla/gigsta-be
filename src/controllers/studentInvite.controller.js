@@ -40,7 +40,7 @@ const sendStudentInviteEmail = async (email, invitedByName, inviteToken) => {
                 
                 <div style="text-align: center; margin: 30px 0;">
                     <a href="${inviteUrl}" 
-                       style="background-color: #2563eb; color: white; padding: 15px 30px; text-decoration: none; 
+                       style="background-color: #f10bad; color: white; padding: 15px 30px; text-decoration: none; 
                               border-radius: 8px; font-size: 16px; font-weight: bold; display: inline-block;">
                         Accept Invitation & Sign Up
                     </a>
@@ -328,6 +328,54 @@ const getStudentsByAgency = async (request, response) => {
     }
 };
 
+// Get ACTIVE students by agency (accepted users)
+const getActiveStudentsByAgency = async (request, response) => {
+    const agencyId = request.userID;
+
+    try {
+        const students = await User.find({
+            agencyId,
+            sellerType: 'student',
+            isVerified: true,
+            deletedAt: null
+        }).select('-password').sort({ createdAt: -1 });
+
+        return response.status(200).send({
+            error: false,
+            message: 'Active students retrieved successfully.',
+            data: students
+        });
+    } catch (error) {
+        return response.status(error.status || 500).send({
+            error: true,
+            message: error.message
+        });
+    }
+};
+
+// Get PENDING students by agency (pending invites that are not yet accepted)
+const getPendingStudentsByAgency = async (request, response) => {
+    const agencyId = request.userID;
+
+    try {
+        const invites = await StudentInvite.find({
+            invitedBy: agencyId,
+            status: 'pending'
+        }).select('email status createdAt expiresAt').sort({ createdAt: -1 });
+
+        return response.status(200).send({
+            error: false,
+            message: 'Pending student invites retrieved successfully.',
+            data: invites
+        });
+    } catch (error) {
+        return response.status(error.status || 500).send({
+            error: true,
+            message: error.message
+        });
+    }
+};
+
 // Soft delete a student belonging to the authenticated agency
 const deleteStudentByAgency = async (request, response) => {
     const agencyId = request.userID;
@@ -350,8 +398,9 @@ const deleteStudentByAgency = async (request, response) => {
             throw CustomException('Student not found.', 404);
         }
 
-        student.deletedAt = new Date();
-        await student.save();
+        await StudentInvite.findOneAndDelete({ email: student.email });
+
+        await User.findOneAndDelete({ _id: studentId });
 
         return response.status(200).send({
             error: false,
@@ -370,5 +419,7 @@ module.exports = {
     verifyInviteToken,
     acceptInviteAndRegister,
     getStudentsByAgency,
-    deleteStudentByAgency
+    getActiveStudentsByAgency,
+    getPendingStudentsByAgency,
+    deleteStudentByAgency,
 };
