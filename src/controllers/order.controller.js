@@ -51,12 +51,12 @@ const getOrders = async (request, response) => {
 
         // Filter gigs for sellers
         const updatedOrders = orders.map(item => {
-            if (item._doc.buyerID._id.toString() === request.userID) {
+            if (item._doc.buyerID?._id.toString() === request.userID) {
                 return item._doc;
             }
             return {
                 ...item._doc,
-                gigs: item._doc.gigs.filter(gig => gig._doc.sellerID._id.toString() === request.userID)
+                gigs: item._doc.gigs.filter(gig => gig._doc.sellerID?._id.toString() === request.userID)
             };
         });
 
