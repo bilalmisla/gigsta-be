@@ -34,6 +34,19 @@ const orderStatusSchema = new mongoose.Schema({
         type: Boolean,
         default: false
     },
+    extendRequest: {
+        orderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order' },
+        gigId: { type: mongoose.Schema.Types.ObjectId, ref: 'Gig' },
+        sellerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        buyerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        days: { type: Number },
+        currentDeliveryDate: { type: Date },
+        newDeliveryDate: { type: Date },
+        status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending' },
+        requestedAt: { type: Date, default: Date.now },
+        approvedAt: { type: Date },
+        rejectedAt: { type: Date }
+    },
     deletedAt: {
         type: Date,
         default: null

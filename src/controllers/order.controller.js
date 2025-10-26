@@ -1,6 +1,6 @@
 const { Order, Gig, User, OrderStatus, Withdrawal } = require('../models');
 const { CustomException } = require('../utils');
-const { sendBuyerOrderConfirmationEmail, sendSellerOrderNotificationEmail, sendSellerWithdrawalNotificationEmail, sendSellerWithdrawalStatusUpdateEmail } = require('../utils/emailTemplates');
+const { sendBuyerOrderConfirmationEmail, sendSellerOrderNotificationEmail, sendSellerWithdrawalNotificationEmail, sendSellerWithdrawalStatusUpdateEmail, sendExtendDeliveryRequestEmail, sendExtendDeliveryApprovalEmail, sendExtendDeliveryRejectionEmail } = require('../utils/emailTemplates');
 const stripe = require('stripe')(process.env.STRIPE_SECRET);
 const nodemailer = require('nodemailer');
 const { sendOrderStatusEmail } = require('../utils/sendOrderStatusEmail');
@@ -877,8 +877,347 @@ const updateOrderDetails = async (req, res) => {
     }
 };
 
+// Extend Delivery Request - Seller requests extension
+const requestExtendDelivery = async (req, res) => {
+    try {
+        const { orderId, gigId, days, currentDeliveryDate } = req.body;
+        const sellerId = req.userID;
+
+        if (!orderId || !gigId || !days || !currentDeliveryDate) {
+            return res.status(400).send({ 
+                error: true, 
+                message: 'Order ID, Gig ID, days, and current delivery date are required.' 
+            });
+        }
+
+        // Verify the order exists and seller has access
+        const order = await Order.findById(orderId)
+            .populate('buyerID', 'username email')
+            .populate('gigs.sellerID', 'username email');
+
+        if (!order) {
+            return res.status(404).send({ error: true, message: 'Order not found.' });
+        }
+
+        // Check if seller has access to this order
+        const hasAccess = order.gigs.some(gig => 
+            gig.sellerID._id.toString() === sellerId && gig.gigID.toString() === gigId
+        );
+
+        if (!hasAccess) {
+            return res.status(403).send({ error: true, message: 'Access denied.' });
+        }
+
+        // Calculate new delivery date
+        const newDeliveryDate = new Date(currentDeliveryDate);
+        newDeliveryDate.setDate(newDeliveryDate.getDate() + parseInt(days));
+
+        // Create extend delivery request data
+        const extendRequest = {
+            orderId,
+            gigId,
+            sellerId,
+            buyerId: order.buyerID._id,
+            days: parseInt(days),
+            currentDeliveryDate: new Date(currentDeliveryDate),
+            newDeliveryDate,
+            status: 'pending',
+            requestedAt: new Date()
+        };
+
+        // Create order status with extend request
+        const orderStatus = new OrderStatus({
+            buyerID: order.buyerID._id,
+            sellerID: sellerId,
+            status: "Extend Delivery Date Requested",
+            orderID: orderId,
+            gigID: gigId,
+            extendRequest: extendRequest
+        });
+
+        await orderStatus.save();
+
+        // Get seller info
+        const seller = await User.findById(sellerId);
+        const gig = await Gig.findById(gigId);
+
+        // Create notification for buyer
+        const buyerNotification = await createNotification({
+            userId: order.buyerID._id,
+            actorId: sellerId,
+            type: 'order.extend_delivery_request',
+            title: 'Delivery Extension Request',
+            body: `${seller.username} requested to extend delivery by ${days} day${days > 1 ? 's' : ''} for "${gig.title}"`,
+            metadata: { 
+                orderId, 
+                gigId, 
+                extendRequest,
+                type: 'extend_delivery_request'
+            }
+        });
+
+        // Emit real-time notification to buyer
+        emitToUser(order.buyerID._id.toString(), 'notification:new', {
+            id: buyerNotification._id,
+            type: buyerNotification.type,
+            title: buyerNotification.title,
+            body: buyerNotification.body,
+            metadata: buyerNotification.metadata,
+            createdAt: buyerNotification.createdAt
+        });
+
+        // Send email to buyer
+        await sendExtendDeliveryRequestEmail(
+            order.buyerID.email,
+            order.buyerID.username,
+            seller.username,
+            gig.title,
+            orderId,
+            days,
+            currentDeliveryDate,
+            newDeliveryDate,
+            transporter
+        );
+
+        return res.send({ 
+            error: false, 
+            message: 'Extend delivery request sent successfully.',
+            extendRequest
+        });
+
+    } catch (error) {
+        console.error('Error requesting extend delivery:', error);
+        return res.status(500).send({ 
+            error: true, 
+            message: error.message || 'Internal server error.' 
+        });
+    }
+};
+
+// Approve Extend Delivery Request - Buyer approves extension
+const approveExtendDelivery = async (req, res) => {
+    try {
+        const { orderId, gigId } = req.body;
+        const buyerId = req.userID;
+
+        if (!orderId || !gigId) {
+            return res.status(400).send({ 
+                error: true, 
+                message: 'Order ID and Gig ID are required.' 
+            });
+        }
+
+        // Find the latest order status with pending extend request
+        const orderStatus = await OrderStatus.findOne({
+            orderID: orderId,
+            gigID: gigId,
+            status: "Extend Delivery Date Requested",
+            'extendRequest.status': 'pending'
+        }).sort({ createdAt: -1 });
+
+        if (!orderStatus || !orderStatus.extendRequest) {
+            return res.status(404).send({ 
+                error: true, 
+                message: 'No pending extend delivery request found.' 
+            });
+        }
+
+        // Verify buyer has access
+        if (orderStatus.buyerID.toString() !== buyerId) {
+            return res.status(403).send({ error: true, message: 'Access denied.' });
+        }
+
+        const extendRequest = orderStatus.extendRequest;
+        const newDeliveryDate = extendRequest.newDeliveryDate;
+
+        // Update order delivery date
+        await Order.findByIdAndUpdate(orderId, {
+            deliveryDate: newDeliveryDate
+        });
+
+        // Create new order status with approved extend request
+        const approvedOrderStatus = new OrderStatus({
+            buyerID: buyerId,
+            sellerID: orderStatus.sellerID,
+            status: "In Progress",
+            orderID: orderId,
+            gigID: gigId,
+            extendRequest: {
+                ...extendRequest,
+                status: 'approved',
+                approvedAt: new Date()
+            }
+        });
+
+        await approvedOrderStatus.save();
+
+        // Get user info
+        const buyer = await User.findById(buyerId);
+        const seller = await User.findById(orderStatus.sellerID);
+        const gig = await Gig.findById(gigId);
+
+        // Create notification for seller
+        const sellerNotification = await createNotification({
+            userId: orderStatus.sellerID,
+            actorId: buyerId,
+            type: 'order.extend_delivery_approved',
+            title: 'Delivery Extension Approved',
+            body: `${buyer.username} approved your delivery extension request for "${gig.title}"`,
+            metadata: { 
+                orderId, 
+                gigId, 
+                extendRequest: approvedOrderStatus.extendRequest,
+                type: 'extend_delivery_approved'
+            }
+        });
+
+        // Emit real-time notification to seller
+        emitToUser(orderStatus.sellerID.toString(), 'notification:new', {
+            id: sellerNotification._id,
+            type: sellerNotification.type,
+            title: sellerNotification.title,
+            body: sellerNotification.body,
+            metadata: sellerNotification.metadata,
+            createdAt: sellerNotification.createdAt
+        });
+
+        // Send email to seller
+        await sendExtendDeliveryApprovalEmail(
+            seller.email,
+            seller.username,
+            buyer.username,
+            gig.title,
+            orderId,
+            extendRequest.days,
+            newDeliveryDate,
+            transporter
+        );
+
+        return res.send({ 
+            error: false, 
+            message: 'Delivery extension approved successfully.',
+            newDeliveryDate
+        });
+
+    } catch (error) {
+        console.error('Error approving extend delivery:', error);
+        return res.status(500).send({ 
+            error: true, 
+            message: error.message || 'Internal server error.' 
+        });
+    }
+};
+
+// Reject Extend Delivery Request - Buyer rejects extension
+const rejectExtendDelivery = async (req, res) => {
+    try {
+        const { orderId, gigId } = req.body;
+        const buyerId = req.userID;
+
+        if (!orderId || !gigId) {
+            return res.status(400).send({ 
+                error: true, 
+                message: 'Order ID and Gig ID are required.' 
+            });
+        }
+
+        // Find the latest order status with pending extend request
+        const orderStatus = await OrderStatus.findOne({
+            orderID: orderId,
+            gigID: gigId,
+            status: "Extend Delivery Date Requested",
+            'extendRequest.status': 'pending'
+        }).sort({ createdAt: -1 });
+
+        if (!orderStatus || !orderStatus.extendRequest) {
+            return res.status(404).send({ 
+                error: true, 
+                message: 'No pending extend delivery request found.' 
+            });
+        }
+
+        // Verify buyer has access
+        if (orderStatus.buyerID.toString() !== buyerId) {
+            return res.status(403).send({ error: true, message: 'Access denied.' });
+        }
+
+        const extendRequest = orderStatus.extendRequest;
+
+        // Create new order status with rejected extend request
+        const rejectedOrderStatus = new OrderStatus({
+            buyerID: buyerId,
+            sellerID: orderStatus.sellerID,
+            status: "In Progress",
+            orderID: orderId,
+            gigID: gigId,
+            extendRequest: {
+                ...extendRequest,
+                status: 'rejected',
+                rejectedAt: new Date()
+            }
+        });
+
+        await rejectedOrderStatus.save();
+
+        // Get user info
+        const buyer = await User.findById(buyerId);
+        const seller = await User.findById(orderStatus.sellerID);
+        const gig = await Gig.findById(gigId);
+
+        // Create notification for seller
+        const sellerNotification = await createNotification({
+            userId: orderStatus.sellerID,
+            actorId: buyerId,
+            type: 'order.extend_delivery_rejected',
+            title: 'Delivery Extension Rejected',
+            body: `${buyer.username} rejected your delivery extension request for "${gig.title}"`,
+            metadata: { 
+                orderId, 
+                gigId, 
+                extendRequest: rejectedOrderStatus.extendRequest,
+                type: 'extend_delivery_rejected'
+            }
+        });
+
+        // Emit real-time notification to seller
+        emitToUser(orderStatus.sellerID.toString(), 'notification:new', {
+            id: sellerNotification._id,
+            type: sellerNotification.type,
+            title: sellerNotification.title,
+            body: sellerNotification.body,
+            metadata: sellerNotification.metadata,
+            createdAt: sellerNotification.createdAt
+        });
+
+        // Send email to seller
+        await sendExtendDeliveryRejectionEmail(
+            seller.email,
+            seller.username,
+            buyer.username,
+            gig.title,
+            orderId,
+            extendRequest.days,
+            extendRequest.currentDeliveryDate,
+            transporter
+        );
+
+        return res.send({ 
+            error: false, 
+            message: 'Delivery extension rejected successfully.'
+        });
+
+    } catch (error) {
+        console.error('Error rejecting extend delivery:', error);
+        return res.status(500).send({ 
+            error: true, 
+            message: error.message || 'Internal server error.' 
+        });
+    }
+};
+
 module.exports = {
     getOrders, getOrderDetailsById, paymentIntent, createPayment, createOrders, updateOrderStatus,
-    updatePaymentStatus, getWithdrawals, getEarningStats, updateOrderDetails
+    updatePaymentStatus, getWithdrawals, getEarningStats, updateOrderDetails,
+    requestExtendDelivery, approveExtendDelivery, rejectExtendDelivery
 }
 
