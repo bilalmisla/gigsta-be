@@ -351,7 +351,137 @@ function generateEmailTemplate(data) {
       `;
 }
 
+// 5️⃣ Send email to Buyer when seller requests delivery extension
+const sendExtendDeliveryRequestEmail = async (
+  email,
+  buyerName,
+  sellerName,
+  gigTitle,
+  orderId,
+  days,
+  currentDeliveryDate,
+  newDeliveryDate,
+  transporter
+) => {
+  const orderLink = `${process.env.FRONTEND_URL}/buyer/orders/${orderId}`;
+
+  const mailOptions = {
+    from: `"Gigsta AI" <${process.env.EMAIL_USER}>`,
+    to: email,
+    subject: `⏰ Delivery Extension Request: "${gigTitle}"`,
+    html: `
+      <div class="logo">
+        <img src="https://gigsta.ai/media/logo-black-text.png" alt="Gigsta AI Logo" style="width: 50px; height: 50px;" />
+      </div>
+      <p><strong>Hi ${buyerName},</strong></p>
+      <p>The seller <strong>${sellerName}</strong> has requested to extend the delivery date for your order <strong>"${gigTitle}"</strong>.</p>
+
+      <h3>📅 Extension Details</h3>
+      <ul>
+        <li><strong>Order ID:</strong> ${orderId}</li>
+        <li><strong>Seller:</strong> ${sellerName}</li>
+        <li><strong>Current Delivery Date:</strong> ${new Date(currentDeliveryDate).toLocaleDateString()}</li>
+        <li><strong>Requested Extension:</strong> ${days} day${days > 1 ? 's' : ''}</li>
+        <li><strong>New Delivery Date:</strong> ${new Date(newDeliveryDate).toLocaleDateString()}</li>
+      </ul>
+
+      <p>Please review this request and approve or reject it in your order dashboard:</p>
+      <p><a href="${orderLink}" target="_blank" style="background-color: #f10Bad; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Review Request</a></p>
+
+      <p>You have the option to approve or reject this extension request.</p>
+      <p>Best regards,<br />Gigsta Team</p>
+    `
+  };
+
+  await transporter.sendMail(mailOptions);
+};
+
+// 6️⃣ Send email to Seller when buyer approves delivery extension
+const sendExtendDeliveryApprovalEmail = async (
+  email,
+  sellerName,
+  buyerName,
+  gigTitle,
+  orderId,
+  days,
+  newDeliveryDate,
+  transporter
+) => {
+  const orderLink = `${process.env.FRONTEND_URL}/seller/orders/${orderId}`;
+
+  const mailOptions = {
+    from: `"Gigsta AI" <${process.env.EMAIL_USER}>`,
+    to: email,
+    subject: `✅ Delivery Extension Approved: "${gigTitle}"`,
+    html: `
+      <div class="logo">
+        <img src="https://gigsta.ai/media/logo-black-text.png" alt="Gigsta AI Logo" style="width: 50px; height: 50px;" />
+      </div>
+      <p><strong>Hi ${sellerName},</strong></p>
+      <p>Great news! The buyer <strong>${buyerName}</strong> has approved your delivery extension request for order <strong>"${gigTitle}"</strong>.</p>
+
+      <h3>✅ Approved Extension Details</h3>
+      <ul>
+        <li><strong>Order ID:</strong> ${orderId}</li>
+        <li><strong>Buyer:</strong> ${buyerName}</li>
+        <li><strong>Extension Approved:</strong> ${days} day${days > 1 ? 's' : ''}</li>
+        <li><strong>New Delivery Date:</strong> ${new Date(newDeliveryDate).toLocaleDateString()}</li>
+      </ul>
+
+      <p>You now have until the new delivery date to complete the order. Make sure to deliver on time!</p>
+      <p><a href="${orderLink}" target="_blank" style="background-color: #f10Bad; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">View Order</a></p>
+
+      <p>Best regards,<br />Gigsta Team</p>
+    `
+  };
+
+  await transporter.sendMail(mailOptions);
+};
+
+// 7️⃣ Send email to Seller when buyer rejects delivery extension
+const sendExtendDeliveryRejectionEmail = async (
+  email,
+  sellerName,
+  buyerName,
+  gigTitle,
+  orderId,
+  days,
+  currentDeliveryDate,
+  transporter
+) => {
+  const orderLink = `${process.env.FRONTEND_URL}/seller/orders/${orderId}`;
+
+  const mailOptions = {
+    from: `"Gigsta AI" <${process.env.EMAIL_USER}>`,
+    to: email,
+    subject: `❌ Delivery Extension Rejected: "${gigTitle}"`,
+    html: `
+      <div class="logo">
+        <img src="https://gigsta.ai/media/logo-black-text.png" alt="Gigsta AI Logo" style="width: 50px; height: 50px;" />
+      </div>
+      <p><strong>Hi ${sellerName},</strong></p>
+      <p>The buyer <strong>${buyerName}</strong> has rejected your delivery extension request for order <strong>"${gigTitle}"</strong>.</p>
+
+      <h3>❌ Rejected Extension Details</h3>
+      <ul>
+        <li><strong>Order ID:</strong> ${orderId}</li>
+        <li><strong>Buyer:</strong> ${buyerName}</li>
+        <li><strong>Requested Extension:</strong> ${days} day${days > 1 ? 's' : ''}</li>
+        <li><strong>Original Delivery Date:</strong> ${new Date(currentDeliveryDate).toLocaleDateString()}</li>
+      </ul>
+
+      <p>Please ensure you deliver the order by the original delivery date to avoid any issues.</p>
+      <p><a href="${orderLink}" target="_blank" style="background-color: #f10Bad; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">View Order</a></p>
+
+      <p>Best regards,<br />Gigsta Team</p>
+    `
+  };
+
+  await transporter.sendMail(mailOptions);
+};
+
 module.exports = {
   sendBuyerOrderConfirmationEmail, sendSellerOrderNotificationEmail, generateEmailTemplate,
-  sendSellerWithdrawalNotificationEmail, sendSellerWithdrawalStatusUpdateEmail, sendAdminWithdrawalNotificationEmail
+  sendSellerWithdrawalNotificationEmail, sendSellerWithdrawalStatusUpdateEmail, sendAdminWithdrawalNotificationEmail,
+  sendExtendDeliveryRequestEmail, sendExtendDeliveryApprovalEmail, sendExtendDeliveryRejectionEmail
 }

@@ -58,6 +58,8 @@ const orderSchema = new mongoose.Schema({
     totalAmount: { type: Number, required: true },
     payment_intent: { type: String, required: true },
     isCompleted: { type: Boolean, default: false },
+    // New optional delivery date for the overall order
+    deliveryDate: { type: Date, default: null },
     deletedAt: {
         type: Date,
         default: null
