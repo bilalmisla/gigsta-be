@@ -538,48 +538,57 @@ const authUpdateEmail = async (request, response) => {
 
 const authDeleteAccount = async (request, response) => {
     try {
-        const user = await User.findOne({ _id: request.userID });
+        const user = await User.findById(request.userID);
         if (!user) {
-            throw CustomException('User not found!', 404);
+            return response.status(404).send({
+                error: true,
+                message: "User not found!",
+            });
+        }
+
+        const { password } = request.body;
+        if (!password) {
+            return response.status(400).send({
+                error: true,
+                message: "Password is required to delete your account.",
+            });
+        }
+
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) {
+            return response.status(401).send({
+                error: true,
+                message: "Incorrect password.",
+            });
         }
 
         const currentTime = Date.now();
 
         if (user.isSeller) {
-            // Soft delete gigs by user
             await Gig.updateMany({ userID: user._id }, { deletedAt: currentTime });
-
-            // Soft delete conversations by user
             await Conversation.updateMany({ sellerID: user._id }, { deletedAt: currentTime });
-
-            // Soft delete orders by user
-            await Order.updateMany({ buyerID: user._id }, { deletedAt: currentTime });
+            await Order.updateMany({ sellerID: user._id }, { deletedAt: currentTime });
         } else {
-            // Soft delete conversations by user
             await Conversation.updateMany({ buyerID: user._id }, { deletedAt: currentTime });
-
-            // Soft delete orders by user
             await Order.updateMany({ buyerID: user._id }, { deletedAt: currentTime });
         }
 
-        // Soft delete related records
-        await Message.updateMany({ userID: user._id }, { deletedAt: currentTime }); // Soft delete messages by user
-        await Review.updateMany({ userID: user._id }, { deletedAt: currentTime }); // Soft delete reviews by user
+        await Message.updateMany({ userID: user._id }, { deletedAt: currentTime });
+        await Review.updateMany({ userID: user._id }, { deletedAt: currentTime });
 
-        await sendAccountDeletedEmail(user?.email, user?.username);
+        await sendAccountDeletedEmail(user.email, user.username);
 
-        // Soft delete the user
         await User.findByIdAndUpdate(user._id, { deletedAt: currentTime });
-
 
         return response.status(200).send({
             error: false,
-            message: 'Your account has been successfully deleted.'
+            message: "Your account has been successfully deleted.",
         });
     } catch (error) {
-        return response.status(error.status || 500).send({
+        console.error("Account deletion failed:", error);
+        return response.status(500).send({
             error: true,
-            message: error.message
+            message: error.message || "Internal server error.",
         });
     }
 };
