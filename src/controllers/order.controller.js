@@ -880,7 +880,7 @@ const updateOrderDetails = async (req, res) => {
 // Extend Delivery Request - Seller requests extension
 const requestExtendDelivery = async (req, res) => {
     try {
-        const { orderId, gigId, days, currentDeliveryDate } = req.body;
+        const { orderId, gigId, conversationID, days, currentDeliveryDate } = req.body;
         const sellerId = req.userID;
 
         if (!orderId || !gigId || !days || !currentDeliveryDate) {
@@ -973,6 +973,8 @@ const requestExtendDelivery = async (req, res) => {
             seller.username,
             gig.title,
             orderId,
+            gigId,
+            conversationID,
             days,
             currentDeliveryDate,
             newDeliveryDate,
@@ -997,7 +999,7 @@ const requestExtendDelivery = async (req, res) => {
 // Approve Extend Delivery Request - Buyer approves extension
 const approveExtendDelivery = async (req, res) => {
     try {
-        const { orderId, gigId } = req.body;
+        const { orderId, gigId, conversationID } = req.body;
         const buyerId = req.userID;
 
         if (!orderId || !gigId) {
@@ -1088,6 +1090,8 @@ const approveExtendDelivery = async (req, res) => {
             buyer.username,
             gig.title,
             orderId,
+            gigId,
+            conversationID,
             extendRequest.days,
             newDeliveryDate,
             transporter
@@ -1111,7 +1115,7 @@ const approveExtendDelivery = async (req, res) => {
 // Reject Extend Delivery Request - Buyer rejects extension
 const rejectExtendDelivery = async (req, res) => {
     try {
-        const { orderId, gigId } = req.body;
+        const { orderId, gigId, conversationID } = req.body;
         const buyerId = req.userID;
 
         if (!orderId || !gigId) {
@@ -1195,7 +1199,7 @@ const rejectExtendDelivery = async (req, res) => {
             seller.username,
             buyer.username,
             gig.title,
-            orderId,
+            orderId, gigId, conversationID,
             extendRequest.days,
             extendRequest.currentDeliveryDate,
             transporter
