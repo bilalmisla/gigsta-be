@@ -445,6 +445,7 @@ const sendExtendDeliveryRejectionEmail = async (
   buyerName,
   gigTitle,
   orderId,
+  gigId, conversationID,
   days,
   currentDeliveryDate,
   transporter
