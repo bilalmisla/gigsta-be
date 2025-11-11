@@ -357,13 +357,13 @@ const sendExtendDeliveryRequestEmail = async (
   buyerName,
   sellerName,
   gigTitle,
-  orderId,
+  orderId, gigId, conversationID,
   days,
   currentDeliveryDate,
   newDeliveryDate,
   transporter
 ) => {
-  const orderLink = `${process.env.FRONTEND_URL}/buyer/orders/${orderId}`;
+  const orderLink = `${process.env.FRONTEND_URL}/buyer/orders/${orderId}/${conversationID}/${gigId}`;
 
   const mailOptions = {
     from: `"Gigsta AI" <${process.env.EMAIL_USER}>`,
@@ -402,12 +402,12 @@ const sendExtendDeliveryApprovalEmail = async (
   sellerName,
   buyerName,
   gigTitle,
-  orderId,
+  orderId, gigId, conversationID,
   days,
   newDeliveryDate,
   transporter
 ) => {
-  const orderLink = `${process.env.FRONTEND_URL}/seller/orders/${orderId}`;
+  const orderLink = `${process.env.FRONTEND_URL}/seller/orders/${orderId}/${conversationID}/${gigId}`;
 
   const mailOptions = {
     from: `"Gigsta AI" <${process.env.EMAIL_USER}>`,
@@ -449,7 +449,7 @@ const sendExtendDeliveryRejectionEmail = async (
   currentDeliveryDate,
   transporter
 ) => {
-  const orderLink = `${process.env.FRONTEND_URL}/seller/orders/${orderId}`;
+  const orderLink = `${process.env.FRONTEND_URL}/seller/orders/${orderId}/${conversationID}/${gigId}`;
 
   const mailOptions = {
     from: `"Gigsta AI" <${process.env.EMAIL_USER}>`,
