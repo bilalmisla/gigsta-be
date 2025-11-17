@@ -655,6 +655,30 @@ const getWithdrawals = async (req, res) => {
     }
 };
 
+// GET /orders/admin/withdrawals
+const adminGetWithdrawals = async (req, res) => {
+    try {
+        const user = await User.findById(req.userID);
+        if (!user || user.role !== "admin") {
+            return res.status(403).send({
+                error: true,
+                message: "Only admin can view all withdrawals."
+            });
+        }
+
+        const withdrawals = await Withdrawal.find()
+            .populate('sellerID', 'username email image country')
+            .sort({ createdAt: -1 });
+
+        return res.send({ error: false, withdrawals });
+    } catch (error) {
+        return res.status(500).send({
+            error: true,
+            message: error.message || "Internal server error."
+        });
+    }
+};
+
 // Update getEarningStats to only count available funds as not withdrawn
 const getEarningStats = async (request, response) => {
     try {
@@ -1222,6 +1246,6 @@ const rejectExtendDelivery = async (req, res) => {
 module.exports = {
     getOrders, getOrderDetailsById, paymentIntent, createPayment, createOrders, updateOrderStatus,
     updatePaymentStatus, getWithdrawals, getEarningStats, updateOrderDetails,
-    requestExtendDelivery, approveExtendDelivery, rejectExtendDelivery
+    requestExtendDelivery, approveExtendDelivery, rejectExtendDelivery, adminGetWithdrawals
 }
 
