@@ -648,7 +648,8 @@ const getWithdrawals = async (req, res) => {
         if (!user.isSeller) {
             return res.status(403).send({ error: true, message: 'Only sellers can view withdrawals.' });
         }
-        const withdrawals = await Withdrawal.find({ sellerID: user._id }).populate('sellerID', 'username email image country').sort({ createdAt: -1 });
+        const withdrawals = await Withdrawal.find({ sellerID: user._id })
+            .populate('sellerID', 'fullname username email image country state postalCode address phone').sort({ createdAt: -1 });
         return res.send({ error: false, withdrawals });
     } catch (error) {
         return res.status(500).send({ error: true, message: error.message || 'Internal server error.' });
@@ -667,7 +668,7 @@ const adminGetWithdrawals = async (req, res) => {
         }
 
         const withdrawals = await Withdrawal.find()
-            .populate('sellerID', 'username email image country')
+            .populate('sellerID', 'fullname username email image country state postalCode address phone')
             .sort({ createdAt: -1 });
 
         return res.send({ error: false, withdrawals });
@@ -675,6 +676,60 @@ const adminGetWithdrawals = async (req, res) => {
         return res.status(500).send({
             error: true,
             message: error.message || "Internal server error."
+        });
+    }
+};
+
+// GET /orders/withdrawals/:id
+const getWithdrawalById = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const userId = req.userID;
+
+        if (!id) {
+            return res.status(400).send({ error: true, message: 'Withdrawal ID is required.' });
+        }
+
+        // Find withdrawal by ID and populate seller details
+        const withdrawal = await Withdrawal.findById(id)
+            .populate('sellerID', 'fullname username email image country fullname address postalCode state phone isSeller createdAt');
+
+        if (!withdrawal) {
+            return res.status(404).send({ error: true, message: 'Withdrawal not found.' });
+        }
+
+        // Check access permissions
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(401).send({ error: true, message: 'Unauthorized: user not found.' });
+        }
+
+        const isAdmin = user.role === "admin";
+        const isSeller = user.isSeller && withdrawal.sellerID._id.toString() === userId.toString();
+
+        if (!isAdmin && !isSeller) {
+            return res.status(403).send({ error: true, message: 'Access denied. You can only view your own withdrawals.' });
+        }
+
+        // Return withdrawal with seller details and account details
+        const withdrawalDetails = {
+            ...withdrawal.toObject(),
+            seller: withdrawal.sellerID,
+            accountDetails: {
+                accountHolderName: withdrawal.accountHolderName,
+                routingNumber: withdrawal.routingNumber,
+                accountNumber: withdrawal.accountNumber,
+                accountType: withdrawal.accountType,
+                country: withdrawal.country
+            }
+        };
+
+        return res.send({ error: false, withdrawal: withdrawalDetails });
+    } catch (error) {
+        console.error('Error fetching withdrawal by ID:', error);
+        return res.status(500).send({
+            error: true,
+            message: error.message || 'Internal server error.'
         });
     }
 };
@@ -1246,6 +1301,6 @@ const rejectExtendDelivery = async (req, res) => {
 module.exports = {
     getOrders, getOrderDetailsById, paymentIntent, createPayment, createOrders, updateOrderStatus,
     updatePaymentStatus, getWithdrawals, getEarningStats, updateOrderDetails,
-    requestExtendDelivery, approveExtendDelivery, rejectExtendDelivery, adminGetWithdrawals
+    requestExtendDelivery, approveExtendDelivery, rejectExtendDelivery, adminGetWithdrawals, getWithdrawalById
 }
 

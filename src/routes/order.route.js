@@ -5,7 +5,7 @@ const {
     createOrders, createPayment, 
     getOrderDetailsById, updateOrderStatus, getEarningStats, requestWithdrawal, getWithdrawals, updateOrderDetails,
     requestExtendDelivery, approveExtendDelivery, rejectExtendDelivery,
-    adminGetWithdrawals
+    adminGetWithdrawals, getWithdrawalById
 } = require('../controllers/order.controller');
 const app = express.Router();
 
@@ -35,6 +35,7 @@ app.get('/earnings-stats', userMiddleware, getEarningStats);
 // Withdrawals
 // app.post('/withdraw', userMiddleware, requestWithdrawal);
 app.get('/withdrawals', userMiddleware, getWithdrawals);
+app.get('/withdrawals/:id', userMiddleware, getWithdrawalById);
 
 app.get('/admin/withdrawals', userMiddleware, adminGetWithdrawals);
 
