@@ -752,10 +752,10 @@ const updateWithdrawalStatus = async (req, res) => {
             return res.status(404).send({ error: true, message: 'Withdrawal not found.' });
         }
 
-        withdrawal.status = "completed";
-        await withdrawal.save();
+        // Store old status before updating
+        const oldStatus = withdrawal.status;
 
-        // Check access permissions
+        // Check access permissions before updating
         const user = await User.findById(userId);
         if (!user) {
             return res.status(401).send({ error: true, message: 'Unauthorized: user not found.' });
@@ -766,6 +766,41 @@ const updateWithdrawalStatus = async (req, res) => {
 
         if (!isAdmin && !isSeller) {
             return res.status(403).send({ error: true, message: 'Access denied. You can only view your own withdrawals.' });
+        }
+
+        // Update status to completed
+        withdrawal.status = "completed";
+        await withdrawal.save();
+
+        // Send notification to seller if admin changed status to completed
+        if (isAdmin && oldStatus !== "completed" && withdrawal.status === "completed") {
+            try {
+                const sellerNotification = await createNotification({
+                    userId: withdrawal.sellerID._id,
+                    actorId: userId,
+                    type: 'withdrawal.status.completed',
+                    title: 'Withdrawal Payment Completed',
+                    body: `Your withdrawal request of $${withdrawal.amount || 'N/A'} has been processed and completed.`,
+                    metadata: { 
+                        withdrawalId: withdrawal._id, 
+                        amount: withdrawal.amount,
+                        status: withdrawal.status
+                    }
+                });
+
+                // Emit real-time notification to seller
+                emitToUser(withdrawal.sellerID._id.toString(), 'notification:new', {
+                    id: sellerNotification._id,
+                    type: sellerNotification.type,
+                    title: sellerNotification.title,
+                    body: sellerNotification.body,
+                    metadata: sellerNotification.metadata,
+                    createdAt: sellerNotification.createdAt
+                });
+            } catch (notifError) {
+                console.error('Error sending withdrawal notification:', notifError);
+                // Continue execution even if notification fails
+            }
         }
 
         // Return withdrawal with seller details and account details

@@ -25,7 +25,8 @@ app.use(express.json());
 app.use(cookieParser());
 app.use(compression());
 app.use(cors({
-    origin: ['http://localhost:5173', 'https://gigsta.ai', 'https://gigstafrontend.netlify.app', 'https://staging.gigsta.ai', 'https://admin.gigsta.ai'],
+    origin: ['http://localhost:5173', 'http://localhost:5174', 
+        'https://gigsta.ai', 'https://gigstafrontend.netlify.app', 'https://staging.gigsta.ai', 'https://admin.gigsta.ai'],
     credentials: true
 }));
 
