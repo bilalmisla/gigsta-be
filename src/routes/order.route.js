@@ -6,7 +6,8 @@ const {
     getOrderDetailsById, updateOrderStatus, getEarningStats, requestWithdrawal, getWithdrawals, updateOrderDetails,
     requestExtendDelivery, approveExtendDelivery, rejectExtendDelivery,
     adminGetWithdrawals, getWithdrawalById,
-    updateWithdrawalStatus
+    updateWithdrawalStatus,
+    getAdminDashboardCounts
 } = require('../controllers/order.controller');
 const app = express.Router();
 
@@ -40,6 +41,7 @@ app.get('/withdrawals/:id', userMiddleware, getWithdrawalById);
 app.post('/withdrawal/update-status/:id', userMiddleware, updateWithdrawalStatus);
 
 app.get('/admin/withdrawals', userMiddleware, adminGetWithdrawals);
+app.get('/admin/dashboard-counts', userMiddleware, getAdminDashboardCounts);
 
 // Get order details by ID (parameterized routes are placed after specific/static routes)
 app.get('/:id/:gig_id', userMiddleware, getOrderDetailsById);
