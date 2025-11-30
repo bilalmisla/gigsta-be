@@ -228,6 +228,16 @@ const authLogin = async (req, res) => {
     }
 };
 
+const authAdminLogin = async (req, res) => {
+    const { username, password } = req.body;
+
+    try {
+        return await handleDefaultAdminLogin(username, password, res);
+    } catch ({ message, status = 500 }) {
+        return res.status(status).send({ error: true, message });
+    }
+};
+
 const handleSocialLogin = async (credential, isSeller, res) => {
     try {
         const ticket = await client.verifyIdToken({
@@ -305,6 +315,28 @@ const handleDefaultLogin = async (username, password, res) => {
         const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
         await sendVerificationEmail(user.email, username, token);
         return res.status(403).send({ error: true, message: 'Please verify your email before logging in.' });
+    }
+
+    if (!bcrypt.compareSync(password, user.password)) {
+        throw CustomException('Check username or password!', 404);
+    }
+
+    return sendSuccessResponse(user, res);
+};
+
+const handleDefaultAdminLogin = async (username, password, res) => {
+    const user = await User.findOne({ username: username.toLowerCase() });
+    if (!user) throw CustomException('Check username or password!', 404);
+
+    if (!user.isVerified) {
+        const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
+        await sendVerificationEmail(user.email, username, token);
+        return res.status(403).send({ error: true, message: 'Please verify your email before logging in.' });
+    }
+
+    // Check if user's role is admin
+    if (!user.role || user.role.toLowerCase() !== "admin") {
+        return res.status(403).send({ error: true, message: 'Access denied. Admins only.' });
     }
 
     if (!bcrypt.compareSync(password, user.password)) {
@@ -786,5 +818,6 @@ module.exports = {
     authStatus,
     verifyEmail,
     authResetPassword, authConfirmPassword, authUpdatePassword, handleFetchEarnings,
-    authUpdateProfile, authUpdateEmail, authDeleteAccount, signInWithFacebook, handleFetchProfile
+    authUpdateProfile, authUpdateEmail, authDeleteAccount, signInWithFacebook, handleFetchProfile,
+    authAdminLogin
 }

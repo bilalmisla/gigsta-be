@@ -8,7 +8,8 @@ const {
     authDeleteAccount,
     signInWithFacebook,
     handleFetchProfile,
-    handleFetchEarnings
+    handleFetchEarnings,
+    authAdminLogin
 } = require('../controllers/auth.controller');
 const { authenticate } = require('../middlewares');
 const { User } = require('../models');
@@ -20,6 +21,9 @@ app.post('/register', authRegister);
 
 // Login
 app.post('/login', authLogin);
+
+// Admin Login
+app.post('/admin/login', authAdminLogin);
 
 // Logout
 app.post('/logout', authLogout)
