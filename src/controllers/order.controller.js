@@ -799,7 +799,7 @@ const updateWithdrawalStatus = async (req, res) => {
         withdrawal.status = "completed";
         await withdrawal.save();
 
-        // Send notification to seller if admin changed status to completed
+        // Send notification & email to seller if admin changed status to completed
         if (isAdmin && oldStatus !== "completed" && withdrawal.status === "completed") {
             try {
                 const sellerNotification = await createNotification({
@@ -824,8 +824,20 @@ const updateWithdrawalStatus = async (req, res) => {
                     metadata: sellerNotification.metadata,
                     createdAt: sellerNotification.createdAt
                 });
+
+                // Send email notification to seller about withdrawal completion
+                if (withdrawal.sellerID && withdrawal.sellerID.email) {
+                    await sendSellerWithdrawalStatusUpdateEmail(
+                        withdrawal.sellerID.email,
+                        withdrawal.sellerID.fullname || withdrawal.sellerID.username || 'Seller',
+                        withdrawal.amount,
+                        'Approved', // Email template expects 'Approved' or 'Rejected'
+                        new Date(),
+                        transporter
+                    );
+                }
             } catch (notifError) {
-                console.error('Error sending withdrawal notification:', notifError);
+                console.error('Error sending withdrawal notification/email:', notifError);
                 // Continue execution even if notification fails
             }
         }

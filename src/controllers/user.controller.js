@@ -139,6 +139,11 @@ const addSellerIban = async (req, res) => {
             return res.status(400).send({ error: true, message: 'Only seller can withdraw his amount.' });
         }
 
+        const adminUser = await User.findOne({ role: 'admin' });
+        if (!adminUser) {
+            return res.status(400).send({ error: true, message: 'Admin user not found.' });
+        }
+
         const { accountHolderName, routingNumber, accountNumber, accountType, amount, statuses } = req.body;
         if (!accountHolderName || !routingNumber || !accountNumber) {
             return res.status(400).send({ error: true, message: 'Missing required fields.' });
@@ -160,9 +165,9 @@ const addSellerIban = async (req, res) => {
                 { $set: { withdrawn: true } }
             );
         }
-
+        
         await sendAdminWithdrawalNotificationEmail(
-            process.env.EMAIL_USER,
+            adminUser.email,
             {
                 fullName: user.fullname,
                 email: user.email,
