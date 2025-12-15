@@ -11,7 +11,7 @@ const { initSocket } = require('./server-realtime');
 // Other Route files
 const { 
     userRoute, conversationRoute, gigRoute, messageRoute, 
-    orderRoute, reviewRoute, authRoute, contactRoute, paymentMethodRoute, notificationRoute, studentInviteRoute 
+    orderRoute, reviewRoute, authRoute, contactRoute, paymentMethodRoute, notificationRoute, studentInviteRoute, adminRoute 
 } = require('./routes');
 const { OrderStatus } = require('./models');
 const autoUpdateCollections = require('./utils/autoUpdateCollections');
@@ -25,7 +25,8 @@ app.use(express.json());
 app.use(cookieParser());
 app.use(compression());
 app.use(cors({
-    origin: ['http://localhost:5173', 'https://gigsta.ai', 'https://gigstafrontend.netlify.app', 'https://staging.gigsta.ai', 'https://admin.gigsta.ai'],
+    origin: ['http://localhost:5173', 'http://localhost:5174', 
+        'https://gigsta.ai', 'https://gigstafrontend.netlify.app', 'https://staging.gigsta.ai', 'https://admin.gigsta.ai'],
     credentials: true
 }));
 
@@ -41,6 +42,7 @@ app.use('/api/submit-form', contactRoute);
 app.use('/api/pm', paymentMethodRoute);
 app.use('/api/notifications', notificationRoute);
 app.use('/api/student-invites', studentInviteRoute);
+app.use('/api/admin', adminRoute);
 
 // const updateAllRecords = async () => {
 //     const result = await OrderStatus.updateMany({}, { $set: { revisionRequestedCount: 0 } });

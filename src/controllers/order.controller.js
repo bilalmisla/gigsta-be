@@ -648,10 +648,220 @@ const getWithdrawals = async (req, res) => {
         if (!user.isSeller) {
             return res.status(403).send({ error: true, message: 'Only sellers can view withdrawals.' });
         }
-        const withdrawals = await Withdrawal.find({ sellerID: user._id }).populate('sellerID', 'username email image country').sort({ createdAt: -1 });
+        const withdrawals = await Withdrawal.find({ sellerID: user._id })
+            .populate('sellerID', 'fullname username email image country state postalCode address phone').sort({ createdAt: -1 });
         return res.send({ error: false, withdrawals });
     } catch (error) {
         return res.status(500).send({ error: true, message: error.message || 'Internal server error.' });
+    }
+};
+
+// GET /orders/admin/withdrawals
+const adminGetWithdrawals = async (req, res) => {
+    try {
+        const user = await User.findById(req.userID);
+        if (!user || user.role !== "admin") {
+            return res.status(403).send({
+                error: true,
+                message: "Only admin can view all withdrawals."
+            });
+        }
+
+        const withdrawals = await Withdrawal.find()
+            .populate('sellerID', 'fullname username email image country state postalCode address phone')
+            .sort({ createdAt: -1 });
+
+        return res.send({ error: false, withdrawals });
+    } catch (error) {
+        return res.status(500).send({
+            error: true,
+            message: error.message || "Internal server error."
+        });
+    }
+};
+
+// GET /orders/withdrawals/:id
+const getWithdrawalById = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const userId = req.userID;
+
+        if (!id) {
+            return res.status(400).send({ error: true, message: 'Withdrawal ID is required.' });
+        }
+
+        // Find withdrawal by ID and populate seller details
+        const withdrawal = await Withdrawal.findById(id)
+            .populate('sellerID', 'fullname username email image country fullname address postalCode state phone isSeller createdAt');
+
+        if (!withdrawal) {
+            return res.status(404).send({ error: true, message: 'Withdrawal not found.' });
+        }
+
+        // Check access permissions
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(401).send({ error: true, message: 'Unauthorized: user not found.' });
+        }
+
+        const isAdmin = user.role === "admin";
+        const isSeller = user.isSeller && withdrawal.sellerID._id.toString() === userId.toString();
+
+        if (!isAdmin && !isSeller) {
+            return res.status(403).send({ error: true, message: 'Access denied. You can only view your own withdrawals.' });
+        }
+
+        // Return withdrawal with seller details and account details
+        const withdrawalDetails = {
+            ...withdrawal.toObject(),
+            seller: withdrawal.sellerID,
+            accountDetails: {
+                accountHolderName: withdrawal.accountHolderName,
+                routingNumber: withdrawal.routingNumber,
+                accountNumber: withdrawal.accountNumber,
+                accountType: withdrawal.accountType,
+                country: withdrawal.country
+            }
+        };
+
+        return res.send({ error: false, withdrawal: withdrawalDetails });
+    } catch (error) {
+        console.error('Error fetching withdrawal by ID:', error);
+        return res.status(500).send({
+            error: true,
+            message: error.message || 'Internal server error.'
+        });
+    }
+};
+
+const getAdminDashboardCounts = async (req, res) => {
+    try {
+        // Ensure only admin can access
+        const requester = await User.findById(req.userID);
+        if (!requester || requester.role !== 'admin') {
+            return res.status(403).send({ error: true, message: 'Forbidden: admin role required.' });
+        }
+
+        const totalUsers = await User.countDocuments({ deletedAt: null });
+        const totalSellers = await User.countDocuments({ isSeller: true, deletedAt: null });
+        const totalBuyers = totalUsers - totalSellers;
+        const ordersCount = await Order.countDocuments({ deletedAt: null });
+        const activeGigs = await Gig.countDocuments({ deletedAt: null });
+
+        const revenueAgg = await Order.aggregate([
+            { $match: { deletedAt: null, isCompleted: true } },
+            { $group: { _id: null, totalRevenue: { $sum: '$totalAmount' } } }
+        ]);
+        const totalRevenue = revenueAgg.length ? revenueAgg[0].totalRevenue : 0;
+
+        return res.send({ error: false, data: { totalUsers, totalSellers, totalBuyers, ordersCount, activeGigs, totalRevenue } });
+    } catch (error) {
+        console.error('getDashboardCounts error:', error);
+        return res.status(500).send({ error: true, message: error.message || 'Internal server error.' });
+    }
+};
+
+// GET /orders/withdrawals/:id
+const updateWithdrawalStatus = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const userId = req.userID;
+
+        if (!id) {
+            return res.status(400).send({ error: true, message: 'Withdrawal ID is required.' });
+        }
+
+        // Find withdrawal by ID and populate seller details
+        const withdrawal = await Withdrawal.findById(id)
+            .populate('sellerID', 'fullname username email image country fullname address postalCode state phone isSeller createdAt');
+
+        if (!withdrawal) {
+            return res.status(404).send({ error: true, message: 'Withdrawal not found.' });
+        }
+
+        // Store old status before updating
+        const oldStatus = withdrawal.status;
+
+        // Check access permissions before updating
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(401).send({ error: true, message: 'Unauthorized: user not found.' });
+        }
+
+        const isAdmin = user.role === "admin";
+        const isSeller = user.isSeller && withdrawal.sellerID._id.toString() === userId.toString();
+
+        if (!isAdmin && !isSeller) {
+            return res.status(403).send({ error: true, message: 'Access denied. You can only view your own withdrawals.' });
+        }
+
+        // Update status to completed
+        withdrawal.status = "completed";
+        await withdrawal.save();
+
+        // Send notification & email to seller if admin changed status to completed
+        if (isAdmin && oldStatus !== "completed" && withdrawal.status === "completed") {
+            try {
+                const sellerNotification = await createNotification({
+                    userId: withdrawal.sellerID._id,
+                    actorId: userId,
+                    type: 'withdrawal.status.completed',
+                    title: 'Withdrawal Payment Completed',
+                    body: `Your withdrawal request of $${withdrawal.amount || 'N/A'} has been processed and completed.`,
+                    metadata: { 
+                        withdrawalId: withdrawal._id, 
+                        amount: withdrawal.amount,
+                        status: withdrawal.status
+                    }
+                });
+
+                // Emit real-time notification to seller
+                emitToUser(withdrawal.sellerID._id.toString(), 'notification:new', {
+                    id: sellerNotification._id,
+                    type: sellerNotification.type,
+                    title: sellerNotification.title,
+                    body: sellerNotification.body,
+                    metadata: sellerNotification.metadata,
+                    createdAt: sellerNotification.createdAt
+                });
+
+                // Send email notification to seller about withdrawal completion
+                if (withdrawal.sellerID && withdrawal.sellerID.email) {
+                    await sendSellerWithdrawalStatusUpdateEmail(
+                        withdrawal.sellerID.email,
+                        withdrawal.sellerID.fullname || withdrawal.sellerID.username || 'Seller',
+                        withdrawal.amount,
+                        'Approved', // Email template expects 'Approved' or 'Rejected'
+                        new Date(),
+                        transporter
+                    );
+                }
+            } catch (notifError) {
+                console.error('Error sending withdrawal notification/email:', notifError);
+                // Continue execution even if notification fails
+            }
+        }
+
+        // Return withdrawal with seller details and account details
+        const withdrawalDetails = {
+            ...withdrawal.toObject(),
+            seller: withdrawal.sellerID,
+            accountDetails: {
+                accountHolderName: withdrawal.accountHolderName,
+                routingNumber: withdrawal.routingNumber,
+                accountNumber: withdrawal.accountNumber,
+                accountType: withdrawal.accountType,
+                country: withdrawal.country
+            }
+        };
+
+        return res.send({ error: false, withdrawal: withdrawalDetails });
+    } catch (error) {
+        console.error('Error fetching withdrawal by ID:', error);
+        return res.status(500).send({
+            error: true,
+            message: error.message || 'Internal server error.'
+        });
     }
 };
 
@@ -1222,6 +1432,7 @@ const rejectExtendDelivery = async (req, res) => {
 module.exports = {
     getOrders, getOrderDetailsById, paymentIntent, createPayment, createOrders, updateOrderStatus,
     updatePaymentStatus, getWithdrawals, getEarningStats, updateOrderDetails,
-    requestExtendDelivery, approveExtendDelivery, rejectExtendDelivery
+    requestExtendDelivery, approveExtendDelivery, rejectExtendDelivery, adminGetWithdrawals, getWithdrawalById,
+    updateWithdrawalStatus, getAdminDashboardCounts
 }
 
