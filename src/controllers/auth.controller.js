@@ -1,4 +1,4 @@
-const { User, Review, Order, Message, Conversation, Gig, OrderStatus } = require('../models');
+const { User, Review, Order, Message, Conversation, Gig, OrderStatus, Coupon } = require('../models');
 const { CustomException } = require('../utils');
 const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
@@ -88,7 +88,7 @@ const sendConfirmationUpdateEmail = async (email, username, token) => {
     await transporter.sendMail(mailOptions);
 };
 
-const sendConfirmAccountCreatedEmail = async (email, username) => {
+const sendConfirmAccountCreatedEmail = async (email, username, couponCode) => {
     const mailOptions = {
         from: `"Gigsta AI" <${process.env.EMAIL_USER}>`, // Replace with your app name and email
         to: email,
@@ -100,6 +100,7 @@ const sendConfirmAccountCreatedEmail = async (email, username) => {
             <p>Hi <strong>${username}</strong>,</p>
             <p>Welcome to <a href="${process.env.FRONTEND_URL}" target="_blank">Gigsta AI</a>! We're excited to have you on board.</p>
             <p>Start exploring amazing gigs, connecting with top freelancers, and getting work done effortlessly.</p>
+            ${couponCode ? `<p style="padding: 15px; background-color: #f10Bad; color: white; border-radius: 8px; font-weight: bold; font-size: 16px; margin: 20px 0;">As a welcome gift, use code <strong>${couponCode}</strong> for 10% off your first checkout!</p>` : ''}
             <p>Best regards, <br /> Gigsta Team</p>
         `
     };
@@ -201,6 +202,20 @@ const verifyEmail = async (request, response) => {
         user.isVerified = true;
         await user.save();
 
+        const couponCode = `WELCOME-${user._id.toString().slice(-6).toUpperCase()}`;
+        const couponExists = await Coupon.findOne({ code: couponCode });
+        if (!couponExists) {
+            const newCoupon = new Coupon({
+                code: couponCode,
+                discountPercent: 10,
+                isActive: true,
+                expiryDate: new Date(new Date().setFullYear(new Date().getFullYear() + 1)) // 1 year expiry
+            });
+            await newCoupon.save();
+        }
+
+        await sendConfirmAccountCreatedEmail(user.email, user.username, couponCode);
+
         return response.status(200).send({
             error: false,
             message: 'Your account has been successfully verified.'
@@ -279,7 +294,17 @@ const handleSocialLogin = async (credential, isSeller, res) => {
                 isSeller
             });
             await user.save();
-            await sendConfirmAccountCreatedEmail(user.email, user.username);
+
+            const couponCode = `WELCOME-${user._id.toString().slice(-6).toUpperCase()}`;
+            const newCoupon = new Coupon({
+                code: couponCode,
+                discountPercent: 10,
+                isActive: true,
+                expiryDate: new Date(new Date().setFullYear(new Date().getFullYear() + 1))
+            });
+            await newCoupon.save();
+
+            await sendConfirmAccountCreatedEmail(user.email, user.username, couponCode);
 
             console.log("Created new user:", user);
             return sendSuccessResponse(user, res);
