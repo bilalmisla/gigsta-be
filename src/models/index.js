@@ -9,6 +9,7 @@ const Withdrawal = require('./withdrawal.model');
 const Notification = require('./notification.model');
 const PaymentMethod = require('./paymentMethod.model');
 const StudentInvite = require('./studentInvite.model');
+const Coupon = require('./coupon.model');
 
 module.exports = {
     User,
@@ -21,5 +22,6 @@ module.exports = {
     Withdrawal,
     PaymentMethod,
     Notification,
-    StudentInvite
+    StudentInvite,
+    Coupon
 }

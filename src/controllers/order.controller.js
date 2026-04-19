@@ -1,4 +1,4 @@
-const { Order, Gig, User, OrderStatus, Withdrawal } = require('../models');
+const { Order, Gig, User, OrderStatus, Withdrawal, Coupon } = require('../models');
 const { CustomException } = require('../utils');
 const { sendBuyerOrderConfirmationEmail, sendSellerOrderNotificationEmail, sendSellerWithdrawalNotificationEmail, sendSellerWithdrawalStatusUpdateEmail, sendExtendDeliveryRequestEmail, sendExtendDeliveryApprovalEmail, sendExtendDeliveryRejectionEmail } = require('../utils/emailTemplates');
 const stripe = require('stripe')(process.env.STRIPE_SECRET);
@@ -301,7 +301,17 @@ const paymentIntent = async (request, response) => {
             throw CustomException(`Gig with ID ${_id} not found`, 404);
         }
 
-        const subtotal = gig.price;
+        let subtotal = gig.price;
+        let discountAmount = 0;
+
+        if (request.body.couponCode) {
+            const coupon = await Coupon.findOne({ code: request.body.couponCode.trim().toUpperCase() });
+            if (coupon && coupon.isActive && new Date(coupon.expiryDate) >= new Date()) {
+                discountAmount = parseFloat(((subtotal * coupon.discountPercent) / 100).toFixed(2));
+                subtotal -= discountAmount;
+            }
+        }
+
         const taxAmount = parseFloat((subtotal * TAX_RATE).toFixed(2));
         const totalWithTax = subtotal + taxAmount;
 
@@ -374,6 +384,15 @@ const createPayment = async (request, response) => {
             });
         }
 
+        let discountAmount = 0;
+        if (request.body.couponCode) {
+            const coupon = await Coupon.findOne({ code: request.body.couponCode.trim().toUpperCase() });
+            if (coupon && coupon.isActive && new Date(coupon.expiryDate) >= new Date()) {
+                discountAmount = parseFloat(((subtotal * coupon.discountPercent) / 100).toFixed(2));
+                subtotal -= discountAmount;
+            }
+        }
+
         const taxAmount = parseFloat((subtotal * TAX_RATE).toFixed(2));
         const totalWithTax = subtotal + taxAmount;
 
@@ -388,6 +407,7 @@ const createPayment = async (request, response) => {
             error: false,
             orderItems,
             subtotal,
+            discountAmount,
             taxAmount,
             totalAmount: totalWithTax,
             paymentId: paymentIntent.id,
@@ -411,7 +431,7 @@ const transporter = nodemailer.createTransport({
 });
 
 const createOrders = async (request, response) => {
-    const { orderItems, paymentIntent, totalAmount } = request.body;
+    const { orderItems, paymentIntent, totalAmount, couponCode, discountAmount } = request.body;
 
     try {
         if (paymentIntent) {
@@ -419,6 +439,8 @@ const createOrders = async (request, response) => {
                 buyerID: request.userID,
                 gigs: orderItems,
                 totalAmount,
+                couponCode,
+                discountAmount,
                 payment_intent: paymentIntent.id
             });
 
