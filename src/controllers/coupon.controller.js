@@ -85,8 +85,51 @@ const getCoupons = async (req, res) => {
     }
 };
 
+const changeCouponStatus = async (req, res) => {
+    const { id } = req.params;
+    const { isActive } = req.body;
+
+    try {
+        const coupon = await Coupon.findById(id);
+        if (!coupon) {
+            throw CustomException('Coupon not found.', 404);
+        }
+        
+        coupon.isActive = isActive !== undefined ? isActive : !coupon.isActive;
+        await coupon.save();
+
+        return res.send({
+            error: false,
+            message: 'Coupon status updated successfully.',
+            coupon
+        });
+    } catch ({ message, status = 500 }) {
+        return res.status(status).send({ error: true, message });
+    }
+};
+
+const deleteCoupon = async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const coupon = await Coupon.findByIdAndDelete(id);
+        if (!coupon) {
+            throw CustomException('Coupon not found.', 404);
+        }
+
+        return res.send({
+            error: false,
+            message: 'Coupon deleted successfully.'
+        });
+    } catch ({ message, status = 500 }) {
+        return res.status(status).send({ error: true, message });
+    }
+};
+
 module.exports = {
     validateCoupon,
     createCoupon,
-    getCoupons
+    getCoupons,
+    changeCouponStatus,
+    deleteCoupon
 };
