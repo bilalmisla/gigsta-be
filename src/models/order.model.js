@@ -60,6 +60,8 @@ const orderSchema = new mongoose.Schema({
     isCompleted: { type: Boolean, default: false },
     // New optional delivery date for the overall order
     deliveryDate: { type: Date, default: null },
+    couponCode: { type: String, default: null },
+    discountAmount: { type: Number, default: 0 },
     deletedAt: {
         type: Date,
         default: null
