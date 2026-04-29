@@ -315,6 +315,29 @@ const paymentIntent = async (request, response) => {
         const taxAmount = parseFloat((subtotal * TAX_RATE).toFixed(2));
         const totalWithTax = subtotal + taxAmount;
 
+        if (totalWithTax === 0) {
+            return response.send({
+                error: false,
+                orderItems: [{
+                    gigID: gig._id,
+                    image: gig.cover,
+                    title: gig.title,
+                    buyerID: request.userID,
+                    sellerID: gig.userID,
+                    price: gig.price,
+                    deliveryTime: gig.deliveryTime,
+                    quantity: 1,
+                    total: subtotal
+                }],
+                subtotal,
+                taxAmount,
+                totalAmount: totalWithTax,
+                paymentId: null,
+                clientSecret: null,
+                skipPayment: true
+            });
+        }
+
         const payment_intent = await stripe.paymentIntents.create({
             amount: Math.round(totalWithTax * 100), // cents
             currency: "USD",
@@ -396,6 +419,20 @@ const createPayment = async (request, response) => {
         const taxAmount = parseFloat((subtotal * TAX_RATE).toFixed(2));
         const totalWithTax = subtotal + taxAmount;
 
+        if (totalWithTax === 0) {
+            return response.send({
+                error: false,
+                orderItems,
+                subtotal,
+                discountAmount,
+                taxAmount,
+                totalAmount: totalWithTax,
+                paymentId: null,
+                clientSecret: null,
+                skipPayment: true
+            });
+        }
+
         // Create a Stripe Payment Intent
         const paymentIntent = await stripe.paymentIntents.create({
             amount: Math.round(totalWithTax * 100), // cents
@@ -434,14 +471,17 @@ const createOrders = async (request, response) => {
     const { orderItems, paymentIntent, totalAmount, couponCode, discountAmount } = request.body;
 
     try {
-        if (paymentIntent) {
+        let order_payment_intent = null;
+        if (paymentIntent || totalAmount === 0) {
+            order_payment_intent = paymentIntent ? paymentIntent.id : "FREE_" + Math.random().toString(36).substring(7);
             const order = new Order({
                 buyerID: request.userID,
                 gigs: orderItems,
                 totalAmount,
                 couponCode,
                 discountAmount,
-                payment_intent: paymentIntent.id
+                payment_intent: order_payment_intent,
+                isCompleted: totalAmount === 0 ? true : false
             });
 
             await order.save();
@@ -531,7 +571,8 @@ const createOrders = async (request, response) => {
 
         return response.send({
             error: false,
-            message: "Congratulations! Payment got successful."
+            message: "Congratulations! Payment got successful.",
+            payment_intent: order_payment_intent
         });
 
     } catch ({ message, status = 500 }) {
