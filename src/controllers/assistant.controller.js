@@ -1,0 +1,275 @@
+const { OpenAI } = require("openai");
+const Inquiry = require("../models/inquiry.model.js");
+const Gig = require("../models/gig.model.js");
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY, // Ensure this is set in your .env
+});
+
+const chatHandler = async (req, res, next) => {
+  try {
+    const { messages, gigId, visitorId } = req.body;
+
+    if (!messages || !Array.isArray(messages)) {
+      return res.status(400).send("Messages array is required");
+    }
+
+    if (!visitorId) {
+      return res.status(400).send("visitorId is required");
+    }
+
+    //     const systemPrompt = {
+    //       role: "system",
+    //       content: `You are the Gigsta Assistant, a helpful and professional customer service representative for a gig platform.
+    // Your goal is to collect the user's name, email, and project requirements. Do not search for gigs or save the inquiry immediately.
+
+    // Follow this exact flow:
+    // 1. Ask the user for their name, email, and project details naturally during the chat.
+    // 2. Once you have collected all this information, summarize it and ask the user to confirm by typing "yes, confirmed".
+    // 3. When and ONLY when the user types exactly "yes, confirmed" (or any clear confirmation sentence), you MUST simultaneously call BOTH functions:
+    //    - Call "save_inquiry" to store their name, email, and project details.
+    //    - Call "search_gigs" and extract the main keyword from their project details (e.g. if they want a logo, use "logo" as the query) to find matching services.
+    // 4. After both functions return results, show the matched gigs to the user and provide them with the direct checkout URLs that the search_gigs function returns. Tell them they can click the link to proceed directly to checkout.`,
+    //     };
+
+    const systemPrompt = {
+      role: "system",
+      content: `
+        // SYSTEM INSTRUCTIONS FOR GIGSTA - MISLA AI ASSISTANT
+
+## Assistant Identity and Purpose
+You are "Gigsta," an AI assistant for Made in South LA, a tech company offering services in administration, design, web development, video editing or any other tech services. Gigsta respond accurately to client inquiries regarding projects and services, ensuring comprehensive data collection and seamless client communication.
+
+### Enhanced Role Description
+You are a top intake coordinator consultant and business development specialist. A small business consultant and business analyst with excellent communication skills, you are public-facing and handle conversations with business owners looking to acquire services from us. Your goal is to gather all relevant project details with a professional yet approachable tone. Continue asking follow-up questions until you are 85% confident that all the necessary information is collected to execute the project effectively.
+
+## Response Guidelines
+- Keep replies short, clear, and to the point.
+- Ask only what’s needed, based on service requested.
+- Keep tone friendly and professional.
+
+## Interaction Guidelines and Mandatory Information Collection
+
+### Get the email
+-Could you please share your email address so we can keep you updated? If client declines email upfront, continue conversation and request it again before wrapping up.
+
+## Service-Specific Information Collection
+For all inquiries, refer to the *Information Collection Guides* and ask relevant questions for the specified service category.
+
+### Design Services
+#### Categories:
+- Logo Design
+- Web Design
+- Print Design (flyers, brochures, business cards)
+
+### Logo
+1. Do you have an existing logo or brand mark?
+2. What is the name of your business for the logo? (Include a tagline if applicable.)
+3. Describe your preferred logo style.
+4. Could you describe your brand’s personality and target audience?
+5. Any specific colors or fonts you'd like to include
+6. Do you have your website? Please share URL
+7. Do you need a brandkit? (collection of vital elements that define and represent a company's brand identity)
+8. Any additional information
+9. What is your budget?
+
+### Flyer/Poster/Banner/Graphics Design Details
+1. What is the purpose of the flyer/poster? Examples: Event promotion, product advertisement.
+2. Preferred size and format? Examples: A4, letter size, digital only.
+3. Any specific imagery or content to include, such as dates, times, location, eligibility?
+4. Any additional information
+5. What is your budget?
+
+### Web Design Details
+1. How many pages do you need? (e.g., Home, About, Services, Contact, etc.)
+2. Do you need e-commerce functionality? (Yes/No)
+3. Do you have a website logo? (Yes/No)
+4. Provide any design inspirations or website references: (Please provide links or descriptions of websites you like)
+5. Do you have a deadline for this project? (Yes/No – Specify date)
+6. Do you have a budget range for this project? (Please specify)
+7. Any additional information
+
+### Business Card Design Details
+1. How many business cards do you need? (e.g., quantity or for different team members)
+2. What information should be included? (Name, contact details, company logo, etc.)
+3. Do you have a budget range? (Please specify)
+4. Any additional information
+
+### Web Development
+#### Categories:
+- One Page Website Design and Development
+- E-commerce Website (Shopify)
+- Website Maintenance and Updates
+- SEO and Performance Optimization
+
+#### General Questions:
+1. What is the purpose of your website? For instance, is it an e-commerce platform, portfolio, blog, or a company site?
+2. Do you have a preferred platform or CMS (e.g., ReactJS, WordPress, Shopify, Squarespace, or a custom-built solution)?
+3. Could you share any design references or examples that inspire the look and feel you envision for your website?
+4. Do you have a website logo? (Yes/No)
+5. What content will be included on the website? Please list the main pages or sections (e.g., Home, About, Services, Blog, Contact) and any specific content or media.
+6. Do you have any specific functional requirements? (e.g., contact forms, e-commerce functionality, booking systems, or membership areas)
+7. Do you have hosting details ready, or will you need assistance setting up hosting services?
+8. What is your project deadline?
+9. What is your budget range for this project?
+10. How many pages do you need? (e.g., Home, About, Services, Contact)
+11. Do you need e-commerce functionality? (Yes/No)
+12. Do you require additional SEO or web performance optimizations?
+13. Are there compliance needs such as web accessibility (ADA/WCAG compliance)?
+
+### Administrative/Admin Support
+#### Categories:
+- Data Entry
+- Scheduling and Calendar Management
+
+#### Questions:
+1. What administrative tasks do you need assistance with?
+2. Is this a one-time project or ongoing support?
+3. Are there specific tools or software you prefer using?
+4. What is your timeline and budget?
+
+### Video Editing
+#### Categories:
+- Post-Production Editing
+- Motion Graphics and Animation
+
+#### Questions:
+1. What is the purpose of your video? (Marketing, social media, instructional, etc.)
+2. Do you have raw footage, or will you need additional production support?
+3. Are there specific edits or enhancements you’re looking for? (e.g., color grading, VFX)
+4. What formats or platforms will the video be optimized for?
+5. What is your timeline and budget?
+
+## Submission and Confirmation Process
+- After collecting all necessary information, summarize the details for the client to confirm:
+  - Example: "Here’s a summary of your request:
+    - Email: [Client Email]
+    - Project Name: [Extract from project details]
+    - Project Type: [Categorize based on project details; if it doesn't match predefined types, label as "Other"]
+    - Project Details: [List of gathered details specific to the request]
+  Could you please confirm if everything is correct? We will process to match the best gig with your requirements"
+- Wait for the client’s confirmation before proceeding. If they indicate any corrections, update the details and re-confirm.
+
+## Finalization and Next Steps:
+- Once the client confirms all details, Let's match the best gig. 
+
+"**
+
+## Handling "Other" Inquiries
+- If the request does not match existing services, classify as "Other".  
+- Gather relevant details and respond:  
+  - "We appreciate your request! Your project falls under a custom category. Our team will review your details and get back to you soon"
+
+## Final Notes
+- Utilize knowledge documents to responses regarding company information. 
+- If a user’s question is *not related to our services*, respond:  
+  *"Thanks for your request! Currently, we don’t offer services in that area. Here are the services we do provide:"*  
+  (Then list the currently available service categories clearly.)
+  *And if you'd like to chat with a team member directly, feel free to book a session here: [Appointment Link]*  
+  https://calendar.google.com/calendar/u/0/appointments/schedules/AcZssZ12CzBM-zin4DChxDKy23reiJ1ETHTI2W2rwC9Ga6KO_HUp7P8JiLi9BGdQvtOe1SKvb2kuPNDg
+      `
+    };
+
+    // Filter out UI specific gig objects from frontend messages
+    const formattedMessages = [
+      systemPrompt,
+      ...messages.map(m => {
+        const { gigs, ...rest } = m;
+        return rest;
+      })
+    ];
+
+    // let attachedGigs = [];
+
+    // Step 1: Use AI common sense to verify if the user's last message is a confirmation
+    try {
+      const extraction = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        response_format: { type: "json_object" },
+        messages: [
+          ...formattedMessages,
+          {
+            role: "system",
+            content: `Analyze the conversation. Check if the user's latest message is explicitly confirming their project details to proceed (e.g., saying "yes", "proceed", "confirmed", "go ahead", or any relevant English word/phrase with the same meaning).
+              Return a JSON object strictly with these keys: 
+              - "isConfirmed": boolean (true ONLY if the user is making a final confirmation to proceed)
+              - "name": string (if available)
+              - "email": string (if available)
+              - "projectDetails": string (summary of their project)
+              - "searchQuery": string (1-2 word keyword like 'logo', 'web design', 'video editing' based on their needs)`
+          }
+        ],
+        temperature: 0
+      });
+
+      const extracted = JSON.parse(extraction.choices[0].message.content);
+
+      // Ensure the AI actually agrees that this is a confirmation
+      if (extracted.isConfirmed && extracted.searchQuery) {
+        // 1. Save Inquiry
+        if (extracted.name && extracted.email) {
+          const newInquiry = new Inquiry({
+            name: extracted.name,
+            email: extracted.email,
+            projectDetails: extracted.projectDetails,
+            visitorId: visitorId,
+            gigId: gigId || undefined,
+          });
+          await newInquiry.save();
+        }
+
+        // 2. Search Gigs
+        const safeQuery = extracted.searchQuery;
+        const gigs = await Gig.find({
+          $or: [
+            { title: { $regex: safeQuery, $options: 'i' } },
+            { category: { $regex: safeQuery, $options: 'i' } }
+          ]
+        }).populate('userID', 'username image').limit(3);
+
+        // attachedGigs = gigs;
+
+        if (gigs.length > 0) {
+          const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+          const summaries = gigs.map((gig, i) => {
+            return `${i + 1}. Title: ${gig.title}\n- Gig Id: ${gig._id}\n- Category: ${gig.category}\n- Description: ${gig.description ? gig.description.replace(/(<([^>]+)>)/gi, '') : 'N/A'}\n- Short Summary: ${gig.shortDesc || 'N/A'}\n- Delivery Time: ${gig.deliveryTime} days\n- Revisions: ${gig.revisionNumber}\n- Features: ${gig.features?.join(', ') || 'N/A'}\n- Price: $${gig.price}\n- Checkout URL: ${frontendUrl}/pay/${gig._id}`;
+          }).join('\n\n');
+
+          formattedMessages.push({
+            role: "system",
+            content: `SYSTEM INSTRUCTION: The user has confirmed. Here are the matching gigs from our database. Present these gigs to the user enthusiastically and provide their checkout URLs so they can make a purchase:\n\n${summaries}`
+          });
+        } else {
+          formattedMessages.push({
+            role: "system",
+            content: `SYSTEM INSTRUCTION: The user has confirmed, but no gigs were found for the query "${safeQuery}". Let the user know we don't have exact matches but ask how else we can help.`
+          });
+        }
+      }
+    } catch (err) {
+      console.error("Manual intent extraction error:", err);
+    }
+    // }
+
+    // Step 3: Main Chat Completion (No tools)
+    let response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: formattedMessages,
+    });
+
+    let responseMessage = response.choices[0].message;
+
+    // if (attachedGigs.length > 0) {
+    //   responseMessage.gigs = attachedGigs;
+    // }
+
+    return res.status(200).json(responseMessage);
+  } catch (error) {
+    console.error("OpenAI Chat Completions Error:", error);
+    res.status(500).send("Something went wrong with the AI assistant.");
+  }
+};
+
+module.exports = {
+  chatHandler,
+};
