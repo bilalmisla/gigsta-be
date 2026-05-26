@@ -12,6 +12,7 @@ const studentInviteRoute = require('./studentInvite.route');
 const adminRoute = require('./admin.route');
 const couponRoute = require('./coupon.route');
 const assistantRoute = require('./assistant.route');
+const fileRoute = require('./file.route');
 
 module.exports = {
     authRoute,
@@ -27,5 +28,6 @@ module.exports = {
     studentInviteRoute,
     adminRoute,
     couponRoute,
-    assistantRoute
+    assistantRoute,
+    fileRoute
 }

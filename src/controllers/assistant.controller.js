@@ -18,6 +18,37 @@ const chatHandler = async (req, res, next) => {
       return res.status(400).send("visitorId is required");
     }
 
+    // Detect if we're in a recommendation loop
+    const detectRecommendationLoop = (msgs) => {
+      const assistantMessages = msgs.filter(m => m.role === 'assistant');
+      if (assistantMessages.length < 3) return false;
+
+      // Check if the last 3 assistant messages contain "no exact matches" or similar patterns
+      const lastThreeAssistant = assistantMessages.slice(-3);
+      const noMatchPatterns = [
+        'no exact match',
+        'don\'t have exact',
+        'no gigs',
+        'couldn\'t find',
+        'don\'t currently have'
+      ];
+
+      let matchCount = 0;
+      for (const msg of lastThreeAssistant) {
+        for (const pattern of noMatchPatterns) {
+          if (msg.content.toLowerCase().includes(pattern)) {
+            matchCount++;
+            break;
+          }
+        }
+      }
+
+      // If 2 or more of the last 3 messages mention no matches, we're likely in a loop
+      return matchCount >= 2;
+    };
+
+    const bookingLink = 'https://calendar.google.com/calendar/appointments/schedules/AcZssZ33yLOCv7DUeruVilUgjx9ybRByluRS8gt05MZbosEqFT6KmQ5AEd62y02rx7Bjs_ViZw86wNaa';
+
     const systemPrompt = {
       role: "system",
       content: `
@@ -164,7 +195,11 @@ For all inquiries, refer to the *Information Collection Guides* and ask relevant
   (Then list the currently available service categories clearly.)
   *And if you'd like to chat with a team member directly, feel free to book a session here: [Appointment Link]*  
   https://calendar.google.com/calendar/u/0/appointments/schedules/AcZssZ12CzBM-zin4DChxDKy23reiJ1ETHTI2W2rwC9Ga6KO_HUp7P8JiLi9BGdQvtOe1SKvb2kuPNDg
-      `
+## IMPORTANT: Loop Prevention and Direct CTA
+- If you detect the user has been through recommendation loops (asked multiple times without finding exact matches), STOP asking follow-up questions
+- Instead, provide a DIRECT booking CTA: "We couldn't find an exact match for your specific requirements. However, our team specializes in custom solutions. Book a consultation with us and we'll connect you with the right person to build exactly what you need."
+- Provide the booking link: https://calendar.google.com/calendar/appointments/schedules/AcZssZ33yLOCv7DUeruVilUgjx9ybRByluRS8gt05MZbosEqFT6KmQ5AEd62y02rx7Bjs_ViZw86wNaa
+- NEVER continue asking clarifying questions if the user has already been through this loop      `
     };
 
     // Filter out UI specific gig objects from frontend messages
@@ -175,6 +210,9 @@ For all inquiries, refer to the *Information Collection Guides* and ask relevant
         return rest;
       })
     ];
+
+    // Check for recommendation loop BEFORE making API calls
+    const inRecommendationLoop = detectRecommendationLoop(formattedMessages);
 
     // let attachedGigs = [];
 
@@ -193,13 +231,15 @@ For all inquiries, refer to the *Information Collection Guides* and ask relevant
               - "name": string (if available)
               - "email": string (if available)
               - "projectDetails": string (summary of their project)
-              - "searchQuery": string (1-2 word keyword like 'logo', 'web design', 'video editing' based on their needs)`
+              - "searchQuery": string (1-2 word keyword like 'logo', 'web design', 'video editing' based on their needs)
+              - "confidenceScore": number (0-100, how confident you are that we can find a match)`
           }
         ],
         temperature: 0
       });
 
       const extracted = JSON.parse(extraction.choices[0].message.content);
+      const confidenceThreshold = 50; // Only proceed if confidence > 50%
 
       // Ensure the AI actually agrees that this is a confirmation
       if (extracted.isConfirmed && extracted.searchQuery) {
@@ -215,7 +255,7 @@ For all inquiries, refer to the *Information Collection Guides* and ask relevant
           await newInquiry.save();
         }
 
-        // 2. Search Gigs
+        // 2. Search Gigs (only if confidence is high enough)
         const safeQuery = extracted.searchQuery;
         const gigs = await Gig.find({
           $or: [
@@ -226,7 +266,7 @@ For all inquiries, refer to the *Information Collection Guides* and ask relevant
 
         // attachedGigs = gigs;
 
-        if (gigs.length > 0) {
+        if (gigs.length > 0 && extracted.confidenceScore >= confidenceThreshold) {
           const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
           const summaries = gigs.map((gig, i) => {
             return `${i + 1}. Title: ${gig.title}\n- Gig Id: ${gig._id}\n- Category: ${gig.category}\n- Description: ${gig.description ? gig.description.replace(/(<([^>]+)>)/gi, '') : 'N/A'}\n- Short Summary: ${gig.shortDesc || 'N/A'}\n- Delivery Time: ${gig.deliveryTime} days\n- Revisions: ${gig.revisionNumber}\n- Features: ${gig.features?.join(', ') || 'N/A'}\n- Price: $${gig.price}\n- Checkout URL: ${frontendUrl}/pay/${gig._id}`;
@@ -236,12 +276,24 @@ For all inquiries, refer to the *Information Collection Guides* and ask relevant
             role: "system",
             content: `SYSTEM INSTRUCTION: The user has confirmed. Here are the matching gigs from our database. Present these gigs to the user enthusiastically and provide their checkout URLs so they can make a purchase:\n\n${summaries}`
           });
+        } else if (inRecommendationLoop || extracted.confidenceScore < confidenceThreshold) {
+          // If we're in a loop or low confidence, offer direct booking instead
+          formattedMessages.push({
+            role: "system",
+            content: `SYSTEM INSTRUCTION: The user confirmed their request, but we don't have exact matches for their specific requirements. Instead of asking more questions, provide a DIRECT next step. Say something like: "We couldn't find an exact match for your specific requirements. However, our team specializes in custom solutions. Book a consultation with us and we'll connect you with the right person to build exactly what you need." Then provide the booking link: ${bookingLink}`
+          });
         } else {
           formattedMessages.push({
             role: "system",
-            content: `SYSTEM INSTRUCTION: The user has confirmed, but no gigs were found for the query "${safeQuery}". Let the user know we don't have exact matches but ask how else we can help.`
+            content: `SYSTEM INSTRUCTION: The user has confirmed, but no gigs were found for the query "${safeQuery}". Let the user know we don't have exact matches but provide a direct booking CTA instead of asking more questions. Booking link: ${bookingLink}`
           });
         }
+      } else if (inRecommendationLoop) {
+        // If we're already in a loop and user hasn't confirmed, break the cycle with direct CTA
+        formattedMessages.push({
+          role: "system",
+          content: `SYSTEM INSTRUCTION: We've been going in circles trying to find a match. Break the cycle NOW. Respond with: "It sounds like your project needs a custom solution tailored to your specific requirements. Rather than continuing to search through our standard offerings, I'd like to connect you directly with our team. Book a consultation here and we'll ensure you get exactly what you need: ${bookingLink}"`
+        });
       }
     } catch (err) {
       console.error("Manual intent extraction error:", err);

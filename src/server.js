@@ -11,7 +11,7 @@ const { initSocket } = require('./server-realtime');
 // Other Route files
 const { 
     userRoute, conversationRoute, gigRoute, messageRoute, 
-    orderRoute, reviewRoute, authRoute, contactRoute, paymentMethodRoute, notificationRoute, studentInviteRoute, adminRoute, couponRoute, assistantRoute
+    orderRoute, reviewRoute, authRoute, contactRoute, paymentMethodRoute, notificationRoute, studentInviteRoute, adminRoute, couponRoute, assistantRoute, fileRoute
 } = require('./routes');
 const { OrderStatus } = require('./models');
 const autoUpdateCollections = require('./utils/autoUpdateCollections');
@@ -45,6 +45,7 @@ app.use('/api/student-invites', studentInviteRoute);
 app.use('/api/admin', adminRoute);
 app.use('/api/coupons', couponRoute);
 app.use('/api/assistant', assistantRoute);
+app.use('/api/file', fileRoute);
 
 // const updateAllRecords = async () => {
 //     const result = await OrderStatus.updateMany({}, { $set: { revisionRequestedCount: 0 } });
