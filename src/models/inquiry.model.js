@@ -24,6 +24,10 @@ const inquirySchema = new mongoose.Schema(
       ref: 'Gig',
       required: false, // Optional, depending on if they started from a specific gig
     },
+    files: {
+      type: [String],
+      default: [],
+    },
   },
   { timestamps: true }
 );

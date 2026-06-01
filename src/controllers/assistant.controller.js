@@ -217,6 +217,7 @@ For all inquiries, refer to the *Information Collection Guides* and ask relevant
     // let attachedGigs = [];
 
     // Step 1: Use AI common sense to verify if the user's last message is a confirmation
+    let isConfirmed = false;
     try {
       const extraction = await openai.chat.completions.create({
         model: "gpt-4o-mini",
@@ -240,6 +241,10 @@ For all inquiries, refer to the *Information Collection Guides* and ask relevant
 
       const extracted = JSON.parse(extraction.choices[0].message.content);
       const confidenceThreshold = 50; // Only proceed if confidence > 50%
+
+      if (extracted.isConfirmed) {
+        isConfirmed = true;
+      }
 
       // Ensure the AI actually agrees that this is a confirmation
       if (extracted.isConfirmed && extracted.searchQuery) {
@@ -312,13 +317,52 @@ For all inquiries, refer to the *Information Collection Guides* and ask relevant
     //   responseMessage.gigs = attachedGigs;
     // }
 
-    return res.status(200).json(responseMessage);
+    return res.status(200).json({
+      role: responseMessage.role,
+      content: responseMessage.content,
+      isConfirmed: isConfirmed
+    });
   } catch (error) {
     console.error("OpenAI Chat Completions Error:", error);
     res.status(500).send("Something went wrong with the AI assistant.");
   }
 };
 
+const uploadInquiryFiles = async (req, res, next) => {
+  try {
+    const { visitorId, fileUrls } = req.body;
+
+    if (!visitorId) {
+      return res.status(400).send("visitorId is required");
+    }
+
+    if (!fileUrls || !Array.isArray(fileUrls)) {
+      return res.status(400).send("fileUrls array is required");
+    }
+
+    // Find the most recent inquiry for this visitorId
+    const inquiry = await Inquiry.findOne({ visitorId }).sort({ createdAt: -1 });
+
+    if (!inquiry) {
+      return res.status(404).send("Inquiry not found for this visitor ID.");
+    }
+
+    // Update files field
+    inquiry.files = [...(inquiry.files || []), ...fileUrls];
+    await inquiry.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Files uploaded and linked to inquiry successfully.",
+      inquiry,
+    });
+  } catch (error) {
+    console.error("Error in uploadInquiryFiles:", error);
+    res.status(500).send("Something went wrong saving inquiry files.");
+  }
+};
+
 module.exports = {
   chatHandler,
+  uploadInquiryFiles,
 };
