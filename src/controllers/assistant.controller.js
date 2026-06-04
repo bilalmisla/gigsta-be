@@ -215,6 +215,8 @@ For all inquiries, refer to the *Information Collection Guides* and ask relevant
     const inRecommendationLoop = detectRecommendationLoop(formattedMessages);
 
     // let attachedGigs = [];
+    let extractedData = {};
+    let matchedGigs = [];
 
     // Step 1: Use AI common sense to verify if the user's last message is a confirmation
     let isConfirmed = false;
@@ -231,6 +233,7 @@ For all inquiries, refer to the *Information Collection Guides* and ask relevant
               - "isConfirmed": boolean (true ONLY if the user is making a final confirmation to proceed)
               - "name": string (if available)
               - "email": string (if available)
+              - "budget": string (if available, e.g., "$500-$1000", "budget not specified")
               - "projectDetails": string (summary of their project)
               - "searchQuery": string (1-2 word keyword like 'logo', 'web design', 'video editing' based on their needs)
               - "confidenceScore": number (0-100, how confident you are that we can find a match)`
@@ -244,6 +247,7 @@ For all inquiries, refer to the *Information Collection Guides* and ask relevant
 
       if (extracted.isConfirmed) {
         isConfirmed = true;
+        extractedData = extracted;
       }
 
       // Ensure the AI actually agrees that this is a confirmation
@@ -254,6 +258,7 @@ For all inquiries, refer to the *Information Collection Guides* and ask relevant
             name: extracted.name,
             email: extracted.email,
             projectDetails: extracted.projectDetails,
+            budget: extracted.budget || null,
             visitorId: visitorId,
             gigId: gigId || undefined,
           });
@@ -269,7 +274,7 @@ For all inquiries, refer to the *Information Collection Guides* and ask relevant
           ]
         }).populate('userID', 'username image').limit(3);
 
-        // attachedGigs = gigs;
+        matchedGigs = gigs;
 
         if (gigs.length > 0 && extracted.confidenceScore >= confidenceThreshold) {
           const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
@@ -317,11 +322,40 @@ For all inquiries, refer to the *Information Collection Guides* and ask relevant
     //   responseMessage.gigs = attachedGigs;
     // }
 
-    return res.status(200).json({
+    const responseObject = {
       role: responseMessage.role,
       content: responseMessage.content,
       isConfirmed: isConfirmed
-    });
+    };
+
+    // Add extracted data if confirmed
+    if (isConfirmed && Object.keys(extractedData).length > 0) {
+      responseObject.extractedData = {
+        name: extractedData.name,
+        email: extractedData.email,
+        budget: extractedData.budget,
+        projectDetails: extractedData.projectDetails,
+        searchQuery: extractedData.searchQuery
+      };
+    }
+
+    // Add matched gigs if any
+    if (matchedGigs.length > 0) {
+      responseObject.gigs = matchedGigs.map(gig => ({
+        _id: gig._id,
+        title: gig.title,
+        category: gig.category,
+        description: gig.description,
+        shortDesc: gig.shortDesc,
+        price: gig.price,
+        deliveryTime: gig.deliveryTime,
+        revisionNumber: gig.revisionNumber,
+        features: gig.features,
+        userID: gig.userID
+      }));
+    }
+
+    return res.status(200).json(responseObject);
   } catch (error) {
     console.error("OpenAI Chat Completions Error:", error);
     res.status(500).send("Something went wrong with the AI assistant.");
@@ -362,7 +396,82 @@ const uploadInquiryFiles = async (req, res, next) => {
   }
 };
 
+const finalizeInquiry = async (req, res, next) => {
+  try {
+    const { visitorId, userChoice } = req.body;
+
+    if (!visitorId) {
+      return res.status(400).json({ success: false, message: "visitorId is required" });
+    }
+
+    if (!userChoice || !['yes', 'no'].includes(userChoice.toLowerCase())) {
+      return res.status(400).json({ success: false, message: "userChoice must be 'yes' or 'no'" });
+    }
+
+    // Find the most recent inquiry for this visitorId
+    const inquiry = await Inquiry.findOne({ visitorId }).sort({ createdAt: -1 });
+
+    if (!inquiry) {
+      return res.status(404).json({ success: false, message: "Inquiry not found for this visitor ID." });
+    }
+
+    // Mark whether user chose to upload files
+    inquiry.fileUploadChoice = userChoice.toLowerCase();
+    inquiry.webhookSent = true;
+    await inquiry.save();
+
+    // Call webhook with all collected data
+    const webhookUrl = process.env.WEBHOOK_URL;
+    if (webhookUrl) {
+      try {
+        const webhookPayload = {
+          name: inquiry.name,
+          email: inquiry.email,
+          budget: inquiry.budget,
+          projectDetails: inquiry.projectDetails,
+          fileUploadChoice: inquiry.fileUploadChoice,
+          fileUrls: inquiry.files || [],
+          visitorId: inquiry.visitorId,
+          inquiryId: inquiry._id,
+          createdAt: inquiry.createdAt,
+          timestamp: new Date().toISOString()
+        };
+
+        console.log("📤 Sending webhook to:", webhookUrl);
+        console.log("📋 Webhook payload:", JSON.stringify(webhookPayload, null, 2));
+
+        const webhookResponse = await fetch(webhookUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(webhookPayload)
+        });
+
+        if (webhookResponse.ok) {
+          console.log("✅ Webhook sent successfully");
+        } else {
+          console.warn(`⚠️ Webhook returned status ${webhookResponse.status}`);
+        }
+      } catch (webhookError) {
+        console.error("❌ Webhook call failed:", webhookError);
+        // Don't fail the request if webhook fails, just log it
+      }
+    } else {
+      console.warn("⚠️ WEBHOOK_URL not configured in environment");
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Inquiry finalized successfully",
+      inquiry,
+    });
+  } catch (error) {
+    console.error("Error in finalizeInquiry:", error);
+    res.status(500).json({ success: false, message: "Something went wrong finalizing the inquiry." });
+  }
+};
+
 module.exports = {
   chatHandler,
   uploadInquiryFiles,
+  finalizeInquiry,
 };

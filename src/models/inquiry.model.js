@@ -14,6 +14,10 @@ const inquirySchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    budget: {
+      type: String,
+      default: null,
+    },
     visitorId: {
       type: String,
       required: true,
@@ -27,6 +31,15 @@ const inquirySchema = new mongoose.Schema(
     files: {
       type: [String],
       default: [],
+    },
+    matchedGigIds: {
+      type: [mongoose.Schema.Types.ObjectId],
+      ref: 'Gig',
+      default: [],
+    },
+    webhookSent: {
+      type: Boolean,
+      default: false,
     },
   },
   { timestamps: true }
