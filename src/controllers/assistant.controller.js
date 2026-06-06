@@ -6,16 +6,15 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY, // Ensure this is set in your .env
 });
 
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
+const INITIAL_PROJECT_DETAILS = "Chat session started - awaiting full project requirements.";
+
 const chatHandler = async (req, res, next) => {
   try {
-    const { messages, gigId, visitorId } = req.body;
+    const { messages, gigId } = req.body;
 
     if (!messages || !Array.isArray(messages)) {
       return res.status(400).send("Messages array is required");
-    }
-
-    if (!visitorId) {
-      return res.status(400).send("visitorId is required");
     }
 
     // Detect if we're in a recommendation loop
@@ -217,6 +216,7 @@ For all inquiries, refer to the *Information Collection Guides* and ask relevant
     // let attachedGigs = [];
     let extractedData = {};
     let matchedGigs = [];
+    let inquiryId = null;
 
     // Step 1: Use AI common sense to verify if the user's last message is a confirmation
     let isConfirmed = false;
@@ -245,58 +245,110 @@ For all inquiries, refer to the *Information Collection Guides* and ask relevant
       const extracted = JSON.parse(extraction.choices[0].message.content);
       const confidenceThreshold = 50; // Only proceed if confidence > 50%
 
-      if (extracted.isConfirmed) {
-        isConfirmed = true;
-        extractedData = extracted;
+      const extractedName = (extracted.name || "").trim();
+      const extractedEmail = (extracted.email || "").trim().toLowerCase();
+      if (extractedName && EMAIL_PATTERN.test(extractedEmail)) {
+        let leadInquiry = await Inquiry.findOne({ email: extractedEmail, webhookSent: false }).sort({ createdAt: -1 });
+        if (!leadInquiry) {
+          leadInquiry = new Inquiry({
+            name: extractedName,
+            email: extractedEmail,
+            projectDetails: INITIAL_PROJECT_DETAILS,
+            budget: null,
+            gigId: gigId || undefined,
+          });
+        } else {
+          leadInquiry.name = extractedName;
+          leadInquiry.email = extractedEmail;
+          if (!leadInquiry.gigId && gigId) {
+            leadInquiry.gigId = gigId;
+          }
+        }
+        await leadInquiry.save();
+        inquiryId = leadInquiry._id;
       }
 
       // Ensure the AI actually agrees that this is a confirmation
       if (extracted.isConfirmed && extracted.searchQuery) {
-        // 1. Save Inquiry
-        if (extracted.name && extracted.email) {
-          const newInquiry = new Inquiry({
-            name: extracted.name,
-            email: extracted.email,
-            projectDetails: extracted.projectDetails,
-            budget: extracted.budget || null,
-            visitorId: visitorId,
-            gigId: gigId || undefined,
-          });
-          await newInquiry.save();
-        }
+        const knownInquiry = inquiryId ? await Inquiry.findById(inquiryId) : null;
+        const latestInquiry = knownInquiry || (EMAIL_PATTERN.test(extractedEmail)
+          ? await Inquiry.findOne({ email: extractedEmail, webhookSent: false }).sort({ createdAt: -1 })
+          : null);
+        const knownName = (latestInquiry?.name || "").trim();
+        const knownEmail = (latestInquiry?.email || "").trim().toLowerCase();
+        const confirmedName = (extracted.name || knownName || "").trim();
+        const confirmedEmail = (extracted.email || knownEmail || "").trim().toLowerCase();
 
-        // 2. Search Gigs (only if confidence is high enough)
-        const safeQuery = extracted.searchQuery;
-        const gigs = await Gig.find({
-          $or: [
-            { title: { $regex: safeQuery, $options: 'i' } },
-            { category: { $regex: safeQuery, $options: 'i' } }
-          ]
-        }).populate('userID', 'username image').limit(3);
+        const missingFields = [];
+        if (!confirmedName) missingFields.push("name");
+        if (!EMAIL_PATTERN.test(confirmedEmail)) missingFields.push("email");
 
-        matchedGigs = gigs;
-
-        if (gigs.length > 0 && extracted.confidenceScore >= confidenceThreshold) {
-          const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
-          const summaries = gigs.map((gig, i) => {
-            return `${i + 1}. Title: ${gig.title}\n- Gig Id: ${gig._id}\n- Category: ${gig.category}\n- Description: ${gig.description ? gig.description.replace(/(<([^>]+)>)/gi, '') : 'N/A'}\n- Short Summary: ${gig.shortDesc || 'N/A'}\n- Delivery Time: ${gig.deliveryTime} days\n- Revisions: ${gig.revisionNumber}\n- Features: ${gig.features?.join(', ') || 'N/A'}\n- Price: $${gig.price}\n- Checkout URL: ${frontendUrl}/pay/${gig._id}`;
-          }).join('\n\n');
-
+        if (missingFields.length > 0) {
+          const missingText = missingFields.length === 2 ? "name and email" : missingFields[0];
           formattedMessages.push({
             role: "system",
-            content: `SYSTEM INSTRUCTION: The user has confirmed. Here are the matching gigs from our database. Present these gigs to the user enthusiastically and provide their checkout URLs so they can make a purchase:\n\n${summaries}`
-          });
-        } else if (inRecommendationLoop || extracted.confidenceScore < confidenceThreshold) {
-          // If we're in a loop or low confidence, offer direct booking instead
-          formattedMessages.push({
-            role: "system",
-            content: `SYSTEM INSTRUCTION: The user confirmed their request, but we don't have exact matches for their specific requirements. Instead of asking more questions, provide a DIRECT next step. Say something like: "We couldn't find an exact match for your specific requirements. However, our team specializes in custom solutions. Book a consultation with us and we'll connect you with the right person to build exactly what you need." Then provide the booking link: ${bookingLink}`
+            content: `SYSTEM INSTRUCTION: The user is trying to confirm, but ${missingText} is missing. Ask for the missing ${missingText} in one short friendly message and do not confirm or finalize yet.`
           });
         } else {
-          formattedMessages.push({
-            role: "system",
-            content: `SYSTEM INSTRUCTION: The user has confirmed, but no gigs were found for the query "${safeQuery}". Let the user know we don't have exact matches but provide a direct booking CTA instead of asking more questions. Booking link: ${bookingLink}`
-          });
+          isConfirmed = true;
+          extractedData = {
+            ...extracted,
+            name: confirmedName,
+            email: confirmedEmail,
+          };
+
+          let inquiry = latestInquiry;
+          if (!inquiry) {
+            inquiry = new Inquiry({
+              name: confirmedName,
+              email: confirmedEmail,
+              projectDetails: extracted.projectDetails || INITIAL_PROJECT_DETAILS,
+              budget: extracted.budget || null,
+              gigId: gigId || undefined,
+            });
+          } else {
+            inquiry.name = confirmedName;
+            inquiry.email = confirmedEmail;
+            inquiry.projectDetails = extracted.projectDetails || inquiry.projectDetails || INITIAL_PROJECT_DETAILS;
+            inquiry.budget = extracted.budget || inquiry.budget || null;
+            if (!inquiry.gigId && gigId) {
+              inquiry.gigId = gigId;
+            }
+          }
+          await inquiry.save();
+          inquiryId = inquiry._id;
+
+          const safeQuery = extracted.searchQuery;
+          const gigs = await Gig.find({
+            $or: [
+              { title: { $regex: safeQuery, $options: 'i' } },
+              { category: { $regex: safeQuery, $options: 'i' } }
+            ]
+          }).populate('userID', 'username image').limit(3);
+
+          matchedGigs = gigs;
+
+          if (gigs.length > 0 && extracted.confidenceScore >= confidenceThreshold) {
+            const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+            const summaries = gigs.map((gig, i) => {
+              return `${i + 1}. Title: ${gig.title}\n- Gig Id: ${gig._id}\n- Category: ${gig.category}\n- Description: ${gig.description ? gig.description.replace(/(<([^>]+)>)/gi, '') : 'N/A'}\n- Short Summary: ${gig.shortDesc || 'N/A'}\n- Delivery Time: ${gig.deliveryTime} days\n- Revisions: ${gig.revisionNumber}\n- Features: ${gig.features?.join(', ') || 'N/A'}\n- Price: $${gig.price}\n- Checkout URL: ${frontendUrl}/pay/${gig._id}`;
+            }).join('\n\n');
+
+            formattedMessages.push({
+              role: "system",
+              content: `SYSTEM INSTRUCTION: The user has confirmed. Here are the matching gigs from our database. Present these gigs to the user enthusiastically and provide their checkout URLs so they can make a purchase:\n\n${summaries}`
+            });
+          } else if (inRecommendationLoop || extracted.confidenceScore < confidenceThreshold) {
+            formattedMessages.push({
+              role: "system",
+              content: `SYSTEM INSTRUCTION: The user confirmed their request, but we don't have exact matches for their specific requirements. Instead of asking more questions, provide a DIRECT next step. Say something like: "We couldn't find an exact match for your specific requirements. However, our team specializes in custom solutions. Book a consultation with us and we'll connect you with the right person to build exactly what you need." Then provide the booking link: ${bookingLink}`
+            });
+          } else {
+            formattedMessages.push({
+              role: "system",
+              content: `SYSTEM INSTRUCTION: The user has confirmed, but no gigs were found for the query "${safeQuery}". Let the user know we don't have exact matches but provide a direct booking CTA instead of asking more questions. Booking link: ${bookingLink}`
+            });
+          }
         }
       } else if (inRecommendationLoop) {
         // If we're already in a loop and user hasn't confirmed, break the cycle with direct CTA
@@ -355,6 +407,10 @@ For all inquiries, refer to the *Information Collection Guides* and ask relevant
       }));
     }
 
+    if (inquiryId) {
+      responseObject.inquiryId = inquiryId;
+    }
+
     return res.status(200).json(responseObject);
   } catch (error) {
     console.error("OpenAI Chat Completions Error:", error);
@@ -364,18 +420,17 @@ For all inquiries, refer to the *Information Collection Guides* and ask relevant
 
 const uploadInquiryFiles = async (req, res, next) => {
   try {
-    const { visitorId, fileUrls } = req.body;
+    const { inquiryId, fileUrls } = req.body;
 
-    if (!visitorId) {
-      return res.status(400).send("visitorId is required");
+    if (!inquiryId) {
+      return res.status(400).send("inquiryId is required");
     }
 
     if (!fileUrls || !Array.isArray(fileUrls)) {
       return res.status(400).send("fileUrls array is required");
     }
 
-    // Find the most recent inquiry for this visitorId
-    const inquiry = await Inquiry.findOne({ visitorId }).sort({ createdAt: -1 });
+    const inquiry = await Inquiry.findById(inquiryId);
 
     if (!inquiry) {
       return res.status(404).send("Inquiry not found for this visitor ID.");
@@ -398,18 +453,17 @@ const uploadInquiryFiles = async (req, res, next) => {
 
 const finalizeInquiry = async (req, res, next) => {
   try {
-    const { visitorId, userChoice } = req.body;
+    const { inquiryId, userChoice } = req.body;
 
-    if (!visitorId) {
-      return res.status(400).json({ success: false, message: "visitorId is required" });
+    if (!inquiryId) {
+      return res.status(400).json({ success: false, message: "inquiryId is required" });
     }
 
     if (!userChoice || !['yes', 'no'].includes(userChoice.toLowerCase())) {
       return res.status(400).json({ success: false, message: "userChoice must be 'yes' or 'no'" });
     }
 
-    // Find the most recent inquiry for this visitorId
-    const inquiry = await Inquiry.findOne({ visitorId }).sort({ createdAt: -1 });
+    const inquiry = await Inquiry.findById(inquiryId);
 
     if (!inquiry) {
       return res.status(404).json({ success: false, message: "Inquiry not found for this visitor ID." });
@@ -431,7 +485,6 @@ const finalizeInquiry = async (req, res, next) => {
           projectDetails: inquiry.projectDetails,
           fileUploadChoice: inquiry.fileUploadChoice,
           fileUrls: inquiry.files || [],
-          visitorId: inquiry.visitorId,
           inquiryId: inquiry._id,
           createdAt: inquiry.createdAt,
           timestamp: new Date().toISOString()

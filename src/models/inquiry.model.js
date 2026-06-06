@@ -18,11 +18,6 @@ const inquirySchema = new mongoose.Schema(
       type: String,
       default: null,
     },
-    visitorId: {
-      type: String,
-      required: true,
-      index: true,
-    },
     gigId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Gig',
@@ -30,11 +25,6 @@ const inquirySchema = new mongoose.Schema(
     },
     files: {
       type: [String],
-      default: [],
-    },
-    matchedGigIds: {
-      type: [mongoose.Schema.Types.ObjectId],
-      ref: 'Gig',
       default: [],
     },
     webhookSent: {
