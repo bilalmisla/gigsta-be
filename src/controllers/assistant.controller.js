@@ -516,10 +516,26 @@ const finalizeInquiry = async (req, res, next) => {
       console.warn("⚠️ WEBHOOK_URL not configured in environment");
     }
 
+    const bookingLink = 'https://calendar.google.com/calendar/appointments/schedules/AcZssZ33yLOCv7DUeruVilUgjx9ybRByluRS8gt05MZbosEqFT6KmQ5AEd62y02rx7Bjs_ViZw86wNaa';
+    
     return res.status(200).json({
       success: true,
       message: "Inquiry finalized successfully",
       inquiry,
+      messages: [
+        {
+          role: "assistant",
+          content: "Thank you for your response! 🎉"
+        },
+        {
+          role: "assistant",
+          content: `Please proceed to checkout, or if you'd like to discuss your project with a team member first, feel free to [book a session here](${bookingLink}).`
+        },
+        {
+          role: "assistant",
+          content: "This conversation has ended. To begin a new request, please start a new chat."
+        }
+      ]
     });
   } catch (error) {
     console.error("Error in finalizeInquiry:", error);
