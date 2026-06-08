@@ -198,14 +198,11 @@ For all inquiries, refer to the *Information Collection Guides* and ask relevant
 ## Final Notes
 - If a user’s question is **not related to our services or about/what is gigsta**, respond:  
   **"Thanks for your request! Currently, we don’t offer services in that area. Here are the services we do provide:"**   
-  (Then list the currently available service categories clearly.)
-  *And if you'd like to chat with a team member directly, feel free to book a session here: [Appointment Link]*  
-  https://calendar.google.com/calendar/u/0/appointments/schedules/AcZssZ12CzBM-zin4DChxDKy23reiJ1ETHTI2W2rwC9Ga6KO_HUp7P8JiLi9BGdQvtOe1SKvb2kuPNDg
-## IMPORTANT: Loop Prevention and Direct CTA
+  (Then list the currently available service categories clearly.) and if you'd like to chat with a team member directly, feel free to book a session here: ${bookingLink}*  
+  ## IMPORTANT: Loop Prevention and Direct CTA
 - If you detect the user has been through recommendation loops (asked multiple times without finding exact matches), STOP asking follow-up questions
 - Instead, provide a DIRECT booking CTA: "We couldn't find an exact match for your specific requirements. However, our team specializes in custom solutions. Book a consultation with us and we'll connect you with the right person to build exactly what you need."
-- Provide the booking link: https://calendar.google.com/calendar/appointments/schedules/AcZssZ33yLOCv7DUeruVilUgjx9ybRByluRS8gt05MZbosEqFT6KmQ5AEd62y02rx7Bjs_ViZw86wNaa
-- NEVER continue asking clarifying questions if the user has already been through this loop      `
+ `
     };
 
     // Filter out UI specific gig objects from frontend messages
