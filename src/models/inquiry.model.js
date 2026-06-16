@@ -27,6 +27,18 @@ const inquirySchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
+    extractedContent: {
+      type: [
+        {
+          fileName: String,
+          fileType: String,
+          extractedText: String,
+          summary: String,
+          keyDetails: [String],
+        }
+      ],
+      default: [],
+    },
     webhookSent: {
       type: Boolean,
       default: false,
