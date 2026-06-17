@@ -5,7 +5,8 @@ const { extractMultipleFiles } = require("../utils/fileExtractor");
 
 const router = express.Router();
 
-router.post("/chat", chatHandler);
+// Chat endpoint now accepts files for direct extraction in the chat flow
+router.post("/chat", upload.array('files', 10), chatHandler);
 router.post("/inquiry/upload", upload.array('files', 10), async (req, res, next) => {
 	try {
 		const { inquiryId } = req.body;

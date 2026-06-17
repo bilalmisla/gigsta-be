@@ -156,6 +156,50 @@ Format your response as JSON with keys: extractedText, summary, keyDetails (arra
   }
 };
 
+// Enhance extracted data with logo-specific details when possible
+const enhanceWithLogoDetails = async (extractedData) => {
+  try {
+    const textForAnalysis = extractedData.extractedText || extractedData.summary || "";
+    if (!textForAnalysis || textForAnalysis.length < 20) return extractedData;
+    const logoInfo = await extractLogoDetails(textForAnalysis);
+    if (logoInfo) {
+      extractedData.logoDetails = logoInfo;
+    }
+  } catch (e) {
+    console.error("Error enhancing with logo details:", e);
+  }
+  return extractedData;
+};
+
+/**
+ * Run a logo-specific extractor on text to pull structured logo design details
+ */
+const extractLogoDetails = async (text) => {
+  try {
+    const prompt = `You are an assistant that extracts logo design requirements from arbitrary text.
+Return strict JSON with keys: businessName (string or empty), tagline (string or empty), preferredColors (array of color names or hex codes), style (one-line description like "modern", "minimal", "vintage"), targetAudience (string), additionalNotes (array of short strings). If no data is found for a key, return empty string or empty array accordingly.`;
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        { role: "system", content: prompt },
+        { role: "user", content: `Text to analyze:\n\n${text}` }
+      ],
+      temperature: 0,
+    });
+
+    const content = response.choices[0].message.content || "";
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0]);
+    }
+    return null;
+  } catch (err) {
+    console.error("Logo extraction error:", err);
+    return null;
+  }
+};
+
 /**
  * Extract content from multiple files
  */
@@ -165,7 +209,8 @@ const extractMultipleFiles = async (files) => {
   for (const file of files) {
     try {
       const extracted = await extractFileContent(file);
-      results.push(extracted);
+      const enriched = await enhanceWithLogoDetails(extracted);
+      results.push(enriched);
     } catch (error) {
       console.error(`Error processing file ${file.originalname}:`, error);
       results.push({
