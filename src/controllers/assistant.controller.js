@@ -77,9 +77,6 @@ Always:
 -Maintain a helpful, confident, and consultative tone.
 -Focus on understanding the client’s goals, timeline, budget, technical requirements, and expected outcomes.
 
-File Upload Requests:
-If a user asks to upload a file, respond: "You can upload files anytime during this chat, and I’ll analyze them to help with your request."
-
 Unrelated Questions:
 If a user's question is not related to Gigsta, our services, or their project requirements, do not answer the question.
 -Instead, respond: "Thank you for your question. I'm here to assist with Gigsta services. Your question appears to be outside the scope of our services. If you have a project or service request, I'd be happy to help."
@@ -224,13 +221,145 @@ For all inquiries, refer to the *Information Collection Guides* and ask relevant
       })
     ];
 
-    // Check for recommendation loop BEFORE making API calls
-    const inRecommendationLoop = detectRecommendationLoop(formattedMessages);
-
-    // let attachedGigs = [];
+    let extractedContents = [];
     let extractedData = {};
     let matchedGigs = [];
     let inquiryId = null;
+
+    if (req.files && req.files.length > 0) {
+      formattedMessages.push({
+        role: 'system',
+        content: 'The user has attached one or more files. Use extracted file content to identify project requirements and relate the results to Gigsta services. If a file does not contain any project requirements or requirements-related content, do not describe the file and instead respond with: "Sorry, I can’t process this image because it is not related to the project or our services."'
+      });
+    }
+
+    // Check for recommendation loop BEFORE making API calls
+    const inRecommendationLoop = detectRecommendationLoop(formattedMessages);
+
+    if (req.files && req.files.length > 0) {
+      // If any uploaded file is an image (jpg/jpeg/png), persist metadata and
+      // immediately return the rejection message so images are not described.
+      const hasImageFile = req.files.some(f => {
+        const name = (f.originalname || '').toLowerCase();
+        if (/\.(jpe?g|png)$/i.test(name)) return true;
+        if (f.mimetype && f.mimetype.startsWith('image/')) return true;
+        return false;
+      });
+
+      if (hasImageFile) {
+        // ensure we have an inquiry to attach files to
+        if (!inquiryId) {
+          const fallbackInquiry = new Inquiry({ name: null, email: null, projectDetails: INITIAL_PROJECT_DETAILS });
+          await fallbackInquiry.save();
+          inquiryId = fallbackInquiry._id;
+        }
+
+        try {
+          const inquiry = await Inquiry.findById(inquiryId);
+          if (inquiry) {
+            inquiry.files = [...new Set([...(inquiry.files || []), ...req.files.map((file) => file.originalname)])];
+            inquiry.fileUploadChoice = 'yes';
+            await inquiry.save();
+          }
+        } catch (saveErr) {
+          console.error('Failed to persist image upload metadata:', saveErr);
+        }
+
+        return res.status(200).json({
+          role: 'assistant',
+          content: 'This document does not match our requirements so please upload any other file which is related to our services.',
+          isConfirmed: false,
+          inquiryId
+        });
+      }
+
+      try {
+        extractedContents = await extractMultipleFiles(req.files);
+
+        const buildExtractionPrompt = (extracted) => {
+          const text = ((extracted.extractedText || '') + '\n' + (extracted.summary || '') + '\n' + (Array.isArray(extracted.keyDetails) ? extracted.keyDetails.join('; ') : '')).trim();
+          return `File: ${extracted.fileName}\nExtractedText: ${text}`;
+        };
+
+        const fileAnalysisPrompt = `You are a Gigsta intake assistant. Determine whether the extracted content below contains actual project requirements or service-related information for a digital services request. Answer strictly with JSON: {"hasRequirements": true|false, "reason": "short reason"}. Do not describe the image or file content. Only decide if requirements are present in the extracted text.`;
+
+        const classificationMessages = [
+          { role: 'system', content: fileAnalysisPrompt },
+          { role: 'user', content: extractedContents.map(buildExtractionPrompt).join('\n\n---\n\n') }
+        ];
+
+        const classificationResponse = await openai.chat.completions.create({
+          model: 'gpt-4.1',
+          messages: classificationMessages,
+          temperature: 0,
+          max_tokens: 250,
+        });
+
+        let hasRequirements = false;
+        try {
+          const classificationText = classificationResponse.choices[0].message.content || '';
+          const jsonMatch = classificationText.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            const parsed = JSON.parse(jsonMatch[0]);
+            hasRequirements = Boolean(parsed.hasRequirements);
+          }
+        } catch (parseErr) {
+          console.error('Failed to parse requirement classification:', parseErr);
+        }
+
+        if (!hasRequirements) {
+          const fallbackText = extractedContents
+            .map((extracted) => `${extracted.extractedText || ''} ${extracted.summary || ''} ${(Array.isArray(extracted.keyDetails) ? extracted.keyDetails.join(' ') : '')}`)
+            .join(' ')
+            .toLowerCase();
+          const fallbackKeywords = ['requirement', 'requirements', 'project', 'brief', 'spec', 'specification', 'logo', 'website', 'design', 'budget', 'deadline', 'due', 'contact', 'email', 'order', 'deliver', 'scope', 'timeline', 'need', 'want', 'create', 'build', 'launch'];
+          const fallbackMatch = fallbackKeywords.some((kw) => fallbackText.includes(kw));
+          if (fallbackMatch && fallbackText.length > 80) {
+            hasRequirements = true;
+            console.log('Fallback requirement detection passed for uploaded file content.');
+          }
+        }
+
+        if (!inquiryId) {
+          const fallbackInquiry = new Inquiry({ name: null, email: null, projectDetails: INITIAL_PROJECT_DETAILS });
+          await fallbackInquiry.save();
+          inquiryId = fallbackInquiry._id;
+        }
+
+        try {
+          const inquiry = await Inquiry.findById(inquiryId);
+          if (inquiry) {
+            inquiry.files = [...new Set([...(inquiry.files || []), ...req.files.map((file) => file.originalname)])];
+            inquiry.fileUploadChoice = 'yes';
+            inquiry.extractedContent = [...(inquiry.extractedContent || []), ...extractedContents];
+            await inquiry.save();
+          }
+        } catch (saveErr) {
+          console.error('Failed to persist inquiry files/extraction:', saveErr);
+        }
+
+        const allUploadsAreImages = req.files.every(
+          (f) => /(\.jpe?g|\.png)$/i.test(f.originalname) || (f.mimetype && f.mimetype.startsWith('image/'))
+        );
+
+        if (!hasRequirements && allUploadsAreImages) {
+          return res.status(200).json({
+            role: 'assistant',
+            content: "Sorry, I can’t process this image because it is not related to the project or our services.",
+            isConfirmed: false,
+            inquiryId,
+          });
+        }
+
+        const fileSummaries = extractedContents.map((item) => `File: ${item.fileName}\nSummary: ${item.summary || 'No summary available'}\nKey Details: ${Array.isArray(item.keyDetails) && item.keyDetails.length ? item.keyDetails.join('; ') : 'None'}\n`).join('\n');
+        formattedMessages.push({
+          role: 'user',
+          content: `Here is the extracted content from the attached files:\n\n${fileSummaries}`
+        });
+      } catch (fileErr) {
+        console.error('Error extracting uploaded files:', fileErr);
+      }
+    }
 
     // Step 1: Use AI common sense to verify if the user's last message is a confirmation
     let isConfirmed = false;
@@ -406,10 +535,12 @@ For all inquiries, refer to the *Information Collection Guides* and ask relevant
         // Extract content from uploaded files
         extractedContent = await extractMultipleFiles(req.files);
 
-        // Save extracted content to the inquiry
+        // Save extracted content and file metadata to the inquiry
         const inquiry = await Inquiry.findById(inquiryId);
         if (inquiry) {
           inquiry.extractedContent = [...(inquiry.extractedContent || []), ...extractedContent];
+          inquiry.files = [...new Set([...(inquiry.files || []), ...req.files.map((file) => file.originalname)])];
+          inquiry.fileUploadChoice = 'yes';
           await inquiry.save();
           console.log(`✅ Extracted content from ${req.files.length} file(s) and saved to inquiry ${inquiryId}`);
         }

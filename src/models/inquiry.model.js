@@ -29,6 +29,11 @@ const inquirySchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
+    fileUploadChoice: {
+      type: String,
+      enum: ['yes','no', null],
+      default: null,
+    },
     extractedContent: {
       type: [
         {
