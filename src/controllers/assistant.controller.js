@@ -1,6 +1,7 @@
 const { OpenAI } = require("openai");
 const Inquiry = require("../models/inquiry.model.js");
 const Gig = require("../models/gig.model.js");
+const { extractMultipleFiles } = require("../utils/fileExtractor.js");
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY, // Ensure this is set in your .env
@@ -11,7 +12,16 @@ const INITIAL_PROJECT_DETAILS = "Chat session started - awaiting full project re
 
 const chatHandler = async (req, res, next) => {
   try {
-    const { messages, gigId } = req.body;
+    let { messages, gigId } = req.body;
+
+    // Handle FormData: messages comes as JSON string when files are attached
+    if (typeof messages === 'string') {
+      try {
+        messages = JSON.parse(messages);
+      } catch (e) {
+        return res.status(400).send("Invalid messages format");
+      }
+    }
 
     if (!messages || !Array.isArray(messages)) {
       return res.status(400).send("Messages array is required");
@@ -68,7 +78,7 @@ Always:
 -Focus on understanding the client’s goals, timeline, budget, technical requirements, and expected outcomes.
 
 File Upload Requests:
-If a user asks to upload a file, respond: "Once your project requirements have been collected and confirmed, we will enable file uploads if needed for your project."
+If a user asks to upload a file, respond: "You can upload files anytime during this chat, and I’ll analyze them to help with your request."
 
 Unrelated Questions:
 If a user's question is not related to Gigsta, our services, or their project requirements, do not answer the question.
@@ -378,6 +388,44 @@ For all inquiries, refer to the *Information Collection Guides* and ask relevant
     //   responseMessage.gigs = attachedGigs;
     // }
 
+    // Step 4: Process uploaded files if any (extract content and store)
+    let extractedContent = [];
+    if (req.files && req.files.length > 0) {
+      try {
+        // Ensure we have an inquiryId for storing extracted content
+        if (!inquiryId) {
+          const fallbackInquiry = new Inquiry({
+            name: null,
+            email: null,
+            projectDetails: INITIAL_PROJECT_DETAILS,
+          });
+          await fallbackInquiry.save();
+          inquiryId = fallbackInquiry._id;
+        }
+
+        // Extract content from uploaded files
+        extractedContent = await extractMultipleFiles(req.files);
+
+        // Save extracted content to the inquiry
+        const inquiry = await Inquiry.findById(inquiryId);
+        if (inquiry) {
+          inquiry.extractedContent = [...(inquiry.extractedContent || []), ...extractedContent];
+          await inquiry.save();
+          console.log(`✅ Extracted content from ${req.files.length} file(s) and saved to inquiry ${inquiryId}`);
+        }
+      } catch (extractError) {
+        console.error("Error extracting file content in chat handler:", extractError);
+        extractedContent = [{
+          fileName: "extraction-error.txt",
+          fileType: "error",
+          extractedText: "",
+          summary: `Failed to extract files: ${extractError.message}`,
+          keyDetails: [],
+          error: true
+        }];
+      }
+    }
+
     const responseObject = {
       role: responseMessage.role,
       content: responseMessage.content,
@@ -411,8 +459,30 @@ For all inquiries, refer to the *Information Collection Guides* and ask relevant
       }));
     }
 
+    // Add extracted content from files if any
+    if (extractedContent.length > 0) {
+      responseObject.extractedContent = extractedContent;
+    }
+
     if (inquiryId) {
       responseObject.inquiryId = inquiryId;
+    }
+
+    // If no inquiry was created by the extraction flow, create a minimal inquiry
+    // so the frontend can immediately attach files and trigger extraction.
+    if (!responseObject.inquiryId) {
+      try {
+        const fallbackInquiry = new Inquiry({
+          name: "Anonymous",
+          email: "anonymous@placeholder.local",
+          projectDetails: INITIAL_PROJECT_DETAILS,
+        });
+        await fallbackInquiry.save();
+        responseObject.inquiryId = fallbackInquiry._id;
+        console.log(`✅ Created fallback inquiry ${fallbackInquiry._id} for file uploads`);
+      } catch (e) {
+        console.error('Failed to create fallback inquiry for file uploads:', e);
+      }
     }
 
     return res.status(200).json(responseObject);

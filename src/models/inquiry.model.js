@@ -4,11 +4,13 @@ const inquirySchema = new mongoose.Schema(
   {
     name: {
       type: String,
-      required: true,
+      required: false,
+      default: null,
     },
     email: {
       type: String,
-      required: true,
+      required: false,
+      default: null,
     },
     projectDetails: {
       type: String,
@@ -25,6 +27,18 @@ const inquirySchema = new mongoose.Schema(
     },
     files: {
       type: [String],
+      default: [],
+    },
+    extractedContent: {
+      type: [
+        {
+          fileName: String,
+          fileType: String,
+          extractedText: String,
+          summary: String,
+          keyDetails: [String],
+        }
+      ],
       default: [],
     },
     webhookSent: {
