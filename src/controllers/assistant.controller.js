@@ -1,4 +1,5 @@
 const { OpenAI } = require("openai");
+const path = require("path");
 const Inquiry = require("../models/inquiry.model.js");
 const Gig = require("../models/gig.model.js");
 const { extractMultipleFiles } = require("../utils/fileExtractor.js");
@@ -7,12 +8,76 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY, // Ensure this is set in your .env
 });
 
+/**
+ * Downloads any file type from a Cloudinary URL and returns it as a Buffer.
+ * Works with PNG, JPG, PDF, DOCX, MP3, etc.
+ * 
+ * @param {string} cloudinaryUrl - The full Cloudinary asset URL
+ * @returns {Promise<Buffer>} The file data as a Node.js Buffer
+ */
+const getFileBufferFromCloudinary = async (cloudinaryUrl) => {
+  try {
+    const response = await fetch(cloudinaryUrl);
+    
+    if (!response.ok) {
+      throw new Error(`Cloudinary fetch failed: ${response.status} ${response.statusText}`);
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    return Buffer.from(arrayBuffer);
+    
+  } catch (error) {
+    console.error("Error reading file from Cloudinary URL:", error.message);
+    throw error;
+  }
+};
+
+const extensionFromContentType = (contentType) => {
+  if (!contentType) return null;
+  const lower = contentType.toLowerCase();
+  if (lower.includes("jpeg") || lower.includes("jpg")) return "jpg";
+  if (lower.includes("png")) return "png";
+  if (lower.includes("pdf")) return "pdf";
+  if (lower.includes("wordprocessingml.document")) return "docx";
+  if (lower.includes("msword")) return "doc";
+  if (lower.includes("plain")) return "txt";
+  return null;
+};
+
+const fetchRemoteFile = async (url, fallbackName) => {
+  const buffer = await getFileBufferFromCloudinary(url);
+  const contentType = "application/octet-stream";
+  const urlPath = new URL(url).pathname;
+  let originalname = path.basename(urlPath) || fallbackName || "remote-file";
+  if (!path.extname(originalname)) {
+    const extension = extensionFromContentType(contentType);
+    if (extension) {
+      originalname = `${originalname}.${extension}`;
+    }
+  }
+
+  return {
+    buffer,
+    originalname,
+    mimetype: contentType,
+    sourceUrl: url,
+  };
+};
+
+const buildRemoteFilesFromUrls = async (fileUrls, fileNames = []) => {
+  return Promise.all(
+    fileUrls.map(async (url, index) => {
+      return fetchRemoteFile(url, fileNames[index]);
+    })
+  );
+};
+
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
 const INITIAL_PROJECT_DETAILS = "Chat session started - awaiting full project requirements.";
 
 const chatHandler = async (req, res, next) => {
   try {
-    let { messages, gigId } = req.body;
+    let { messages, gigId, fileUrls, fileNames } = req.body;
 
     // Handle FormData: messages comes as JSON string when files are attached
     if (typeof messages === 'string') {
@@ -25,6 +90,15 @@ const chatHandler = async (req, res, next) => {
 
     if (!messages || !Array.isArray(messages)) {
       return res.status(400).send("Messages array is required");
+    }
+
+    let remoteFiles = [];
+    if (fileUrls && Array.isArray(fileUrls) && fileUrls.length > 0) {
+      try {
+        remoteFiles = await buildRemoteFilesFromUrls(fileUrls, Array.isArray(fileNames) ? fileNames : []);
+      } catch (remoteFetchError) {
+        console.error('Error fetching remote files from Cloudinary:', remoteFetchError);
+      }
     }
 
     // Detect if we're in a recommendation loop
@@ -226,7 +300,9 @@ For all inquiries, refer to the *Information Collection Guides* and ask relevant
     let matchedGigs = [];
     let inquiryId = null;
 
-    if (req.files && req.files.length > 0) {
+    const allUploadedFiles = [...(req.files || []), ...remoteFiles];
+
+    if (allUploadedFiles.length > 0) {
       formattedMessages.push({
         role: 'system',
         content: 'The user has attached one or more files. Use extracted file content to identify project requirements and relate the results to Gigsta services. If a file does not contain any project requirements or requirements-related content, do not describe the file and instead respond with: "Sorry, I can’t process this image because it is not related to the project or our services."'
@@ -236,9 +312,9 @@ For all inquiries, refer to the *Information Collection Guides* and ask relevant
     // Check for recommendation loop BEFORE making API calls
     const inRecommendationLoop = detectRecommendationLoop(formattedMessages);
 
-    if (req.files && req.files.length > 0) {
+    if (allUploadedFiles.length > 0) {
       try {
-        extractedContents = await extractMultipleFiles(req.files);
+        extractedContents = await extractMultipleFiles(allUploadedFiles);
 
         const buildExtractionPrompt = (extracted) => {
           const text = ((extracted.extractedText || '') + '\n' + (extracted.summary || '') + '\n' + (Array.isArray(extracted.keyDetails) ? extracted.keyDetails.join('; ') : '')).trim();
@@ -293,7 +369,8 @@ For all inquiries, refer to the *Information Collection Guides* and ask relevant
         try {
           const inquiry = await Inquiry.findById(inquiryId);
           if (inquiry) {
-            inquiry.files = [...new Set([...(inquiry.files || []), ...req.files.map((file) => file.originalname)])];
+            const fileReferences = allUploadedFiles.map((file) => file.sourceUrl || file.originalname);
+            inquiry.files = [...new Set([...(inquiry.files || []), ...fileReferences])];
             inquiry.fileUploadChoice = 'yes';
             inquiry.extractedContent = [...(inquiry.extractedContent || []), ...extractedContents];
             await inquiry.save();
@@ -302,7 +379,7 @@ For all inquiries, refer to the *Information Collection Guides* and ask relevant
           console.error('Failed to persist inquiry files/extraction:', saveErr);
         }
 
-        const allUploadsAreImages = req.files.every(
+        const allUploadsAreImages = allUploadedFiles.every(
           (f) => /(\.jpe?g|\.png)$/i.test(f.originalname) || (f.mimetype && f.mimetype.startsWith('image/'))
         );
 
@@ -483,7 +560,7 @@ For all inquiries, refer to the *Information Collection Guides* and ask relevant
 
     // Step 4: Process uploaded files if any (extract content and store)
     let extractedContent = [];
-    if (req.files && req.files.length > 0) {
+    if (allUploadedFiles.length > 0) {
       try {
         // Ensure we have an inquiryId for storing extracted content
         if (!inquiryId) {
@@ -497,16 +574,17 @@ For all inquiries, refer to the *Information Collection Guides* and ask relevant
         }
 
         // Extract content from uploaded files
-        extractedContent = await extractMultipleFiles(req.files);
+        extractedContent = await extractMultipleFiles(allUploadedFiles);
 
         // Save extracted content and file metadata to the inquiry
         const inquiry = await Inquiry.findById(inquiryId);
         if (inquiry) {
           inquiry.extractedContent = [...(inquiry.extractedContent || []), ...extractedContent];
-          inquiry.files = [...new Set([...(inquiry.files || []), ...req.files.map((file) => file.originalname)])];
+          const fileReferences = allUploadedFiles.map((file) => file.sourceUrl || file.originalname);
+          inquiry.files = [...new Set([...(inquiry.files || []), ...fileReferences])];
           inquiry.fileUploadChoice = 'yes';
           await inquiry.save();
-          console.log(`✅ Extracted content from ${req.files.length} file(s) and saved to inquiry ${inquiryId}`);
+          console.log(`✅ Extracted content from ${allUploadedFiles.length} file(s) and saved to inquiry ${inquiryId}`);
         }
       } catch (extractError) {
         console.error("Error extracting file content in chat handler:", extractError);
