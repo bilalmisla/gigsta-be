@@ -77,7 +77,7 @@ const INITIAL_PROJECT_DETAILS = "Chat session started - awaiting full project re
 
 const chatHandler = async (req, res, next) => {
   try {
-    let { messages, gigId, fileUrls, fileNames } = req.body;
+    let { messages, gigId, fileUrls, fileNames, inquiryId: incomingInquiryId } = req.body;
 
     // Handle FormData: messages comes as JSON string when files are attached
     if (typeof messages === 'string') {
@@ -93,6 +93,8 @@ const chatHandler = async (req, res, next) => {
     }
 
     let remoteFiles = [];
+    // Initialize inquiryId from incoming request if provided so we can reattach context
+    let inquiryId = incomingInquiryId || null;
     if (fileUrls && Array.isArray(fileUrls) && fileUrls.length > 0) {
       try {
         remoteFiles = await buildRemoteFilesFromUrls(fileUrls, Array.isArray(fileNames) ? fileNames : []);
@@ -298,9 +300,21 @@ For all inquiries, refer to the *Information Collection Guides* and ask relevant
     let extractedContents = [];
     let extractedData = {};
     let matchedGigs = [];
-    let inquiryId = null;
 
     const allUploadedFiles = [...(req.files || []), ...remoteFiles];
+
+    // If we have an inquiry with previously extracted content, load it into formattedMessages
+    if (inquiryId) {
+      try {
+        const existingInquiry = await Inquiry.findById(inquiryId);
+        if (existingInquiry && existingInquiry.extractedContent && existingInquiry.extractedContent.length > 0) {
+          const fileSummaries = existingInquiry.extractedContent.map((item) => `File: ${item.fileName}\nSummary: ${item.summary || 'No summary available'}\nKey Details: ${Array.isArray(item.keyDetails) && item.keyDetails.length ? item.keyDetails.join('; ') : 'None'}\n`).join('\n');
+          formattedMessages.push({ role: 'user', content: `Previously extracted content for this inquiry:\n\n${fileSummaries}` });
+        }
+      } catch (e) {
+        console.error('Failed to load existing inquiry extracted content:', e);
+      }
+    }
 
     if (allUploadedFiles.length > 0) {
       formattedMessages.push({
