@@ -237,42 +237,6 @@ For all inquiries, refer to the *Information Collection Guides* and ask relevant
     const inRecommendationLoop = detectRecommendationLoop(formattedMessages);
 
     if (req.files && req.files.length > 0) {
-      // If any uploaded file is an image (jpg/jpeg/png), persist metadata and
-      // immediately return the rejection message so images are not described.
-      const hasImageFile = req.files.some(f => {
-        const name = (f.originalname || '').toLowerCase();
-        if (/\.(jpe?g|png)$/i.test(name)) return true;
-        if (f.mimetype && f.mimetype.startsWith('image/')) return true;
-        return false;
-      });
-
-      if (hasImageFile) {
-        // ensure we have an inquiry to attach files to
-        if (!inquiryId) {
-          const fallbackInquiry = new Inquiry({ name: null, email: null, projectDetails: INITIAL_PROJECT_DETAILS });
-          await fallbackInquiry.save();
-          inquiryId = fallbackInquiry._id;
-        }
-
-        try {
-          const inquiry = await Inquiry.findById(inquiryId);
-          if (inquiry) {
-            inquiry.files = [...new Set([...(inquiry.files || []), ...req.files.map((file) => file.originalname)])];
-            inquiry.fileUploadChoice = 'yes';
-            await inquiry.save();
-          }
-        } catch (saveErr) {
-          console.error('Failed to persist image upload metadata:', saveErr);
-        }
-
-        return res.status(200).json({
-          role: 'assistant',
-          content: 'This document does not match our requirements so please upload any other file which is related to our services.',
-          isConfirmed: false,
-          inquiryId
-        });
-      }
-
       try {
         extractedContents = await extractMultipleFiles(req.files);
 
