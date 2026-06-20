@@ -202,16 +202,19 @@ const verifyEmail = async (request, response) => {
         user.isVerified = true;
         await user.save();
 
-        const couponCode = `WELCOME-${user._id.toString().slice(-6).toUpperCase()}`;
-        const couponExists = await Coupon.findOne({ code: couponCode });
-        if (!couponExists) {
-            const newCoupon = new Coupon({
-                code: couponCode,
-                discountPercent: 10,
-                isActive: true,
-                expiryDate: new Date(new Date().setFullYear(new Date().getFullYear() + 1)) // 1 year expiry
-            });
-            await newCoupon.save();
+        let couponCode = null;
+        if (!user.isSeller) {
+            couponCode = `WELCOME-${user._id.toString().slice(-6).toUpperCase()}`;
+            const couponExists = await Coupon.findOne({ code: couponCode });
+            if (!couponExists) {
+                const newCoupon = new Coupon({
+                    code: couponCode,
+                    discountPercent: 10,
+                    isActive: true,
+                    expiryDate: new Date(new Date().setFullYear(new Date().getFullYear() + 1)) // 1 year expiry
+                });
+                await newCoupon.save();
+            }
         }
 
         await sendConfirmAccountCreatedEmail(user.email, user.username, couponCode);
@@ -295,14 +298,17 @@ const handleSocialLogin = async (credential, isSeller, res) => {
             });
             await user.save();
 
-            const couponCode = `WELCOME-${user._id.toString().slice(-6).toUpperCase()}`;
-            const newCoupon = new Coupon({
-                code: couponCode,
-                discountPercent: 10,
-                isActive: true,
-                expiryDate: new Date(new Date().setFullYear(new Date().getFullYear() + 1))
-            });
-            await newCoupon.save();
+            let couponCode = null;
+            if (!user.isSeller) {
+                couponCode = `WELCOME-${user._id.toString().slice(-6).toUpperCase()}`;
+                const newCoupon = new Coupon({
+                    code: couponCode,
+                    discountPercent: 10,
+                    isActive: true,
+                    expiryDate: new Date(new Date().setFullYear(new Date().getFullYear() + 1))
+                });
+                await newCoupon.save();
+            }
 
             await sendConfirmAccountCreatedEmail(user.email, user.username, couponCode);
 
