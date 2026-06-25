@@ -127,8 +127,29 @@ const sendAccountDeletedEmail = async (email, username) => {
     await transporter.sendMail(mailOptions);
 }
 
+const generateUniqueUsername = async (fullname) => {
+    // Build a clean base: lowercase, remove non-alphanumeric, max 12 chars
+    const base = fullname
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, '')
+        .slice(0, 12) || 'user';
+
+    let username;
+    let attempts = 0;
+    do {
+        // Fresh random 3-digit number on every attempt
+        const randomNum = Math.floor(100 + Math.random() * 900);
+        username = `${base}${randomNum}`;
+        const existing = await User.findOne({ username });
+        if (!existing) break;
+        attempts++;
+    } while (attempts < 10);
+
+    return username;
+};
+
 const authRegister = async (request, response) => {
-    const { username, email, phone, password, image, isSeller, description, fullname } = request.body;
+    const { email, phone, password, image, isSeller, description, fullname } = request.body;
 
     try {
         const hash = await bcrypt.hash(password, saltRounds);
@@ -140,8 +161,11 @@ const authRegister = async (request, response) => {
             });
         }
 
+        // Auto-generate a unique username from fullname + random number
+        const username = await generateUniqueUsername(fullname);
+
         const user = new User({
-            username: username.toLowerCase(),
+            username,
             email,
             password: hash,
             image,
