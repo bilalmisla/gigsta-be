@@ -1,5 +1,6 @@
 const { User, Review, Order, Message, Conversation, Gig, OrderStatus, Coupon } = require('../models');
 const { CustomException } = require('../utils');
+const { generateRegistrationVerificationEmailHtml } = require('../utils/emailTemplates');
 const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
 const bcrypt = require('bcrypt');
@@ -17,10 +18,11 @@ const transporter = nodemailer.createTransport({
 
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
-const sendVerificationEmail = async (email, username, token) => {
+const sendVerificationEmail = async (email, username, token, fullname) => {
     const verificationUrl = `${process.env.FRONTEND_URL}/verify-email?token=${token}`;
+    const displayName = fullname || username;
     const mailOptions = {
-        from: `"Gigsta AI" <${process.env.EMAIL_USER}>`, // Replace with your app name and email
+        from: `"Gigsta AI" <${process.env.EMAIL_USER}>`,
         to: email,
         subject: 'Action Required: Verify Your Email Address',
         html: `
@@ -28,6 +30,10 @@ const sendVerificationEmail = async (email, username, token) => {
               <img src="https://gigsta.ai/media/logo-black-text.png" alt="Gigsta AI Logo" style="width: 50px; height: 50px;" />
             </div>
             <p><strong>Hi ${username},</strong></p>
+            <p style="display: flex; align-items: center; flex-direction: column; gap: 10px;">
+              <p>Your username is:</p>
+              <strong style="background-color: #f10Bad; color: #ffffff; padding: 14px 24px; border-radius: 8px;">${username}</strong>
+            </p>
             <p>Thank you for signing up for <a href=${process.env.FRONTEND_URL} target="_blank">Gigsta.ai</a>! Please verify your email by clicking the link below:</p>
             <p><a href="${verificationUrl}" style="style="
             background-color:#f10bad;
@@ -182,7 +188,7 @@ const authRegister = async (request, response) => {
         const token = jwt.sign({ userId: savedUser._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
 
         // Send verification email
-        await sendVerificationEmail(email, username, token);
+        await sendVerificationEmail(email, username, token, fullname);
 
         return response.status(201).send({
             error: false,
@@ -368,7 +374,7 @@ const handleDefaultLogin = async (username, password, res) => {
 
     if (!user.isVerified) {
         const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
-        await sendVerificationEmail(user.email, username, token);
+        await sendVerificationEmail(user.email, user.username, token, user.fullname);
         return res.status(403).send({ error: true, message: 'Please verify your email before logging in.' });
     }
 
@@ -385,7 +391,7 @@ const handleDefaultAdminLogin = async (username, password, res) => {
 
     if (!user.isVerified) {
         const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
-        await sendVerificationEmail(user.email, username, token);
+        await sendVerificationEmail(user.email, user.username, token, user.fullname);
         return res.status(403).send({ error: true, message: 'Please verify your email before logging in.' });
     }
 
