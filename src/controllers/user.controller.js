@@ -72,6 +72,7 @@ const fetchTopSellers = async (request, response) => {
                     sellerID: "$_id",
                     totalOrders: 1,
                     username: "$seller.username",
+                    fullname: "$seller.fullname",
                     email: "$seller.email",
                     country: "$seller.country",
                     image: "$seller.image",

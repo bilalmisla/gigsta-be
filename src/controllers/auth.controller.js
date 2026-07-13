@@ -803,7 +803,7 @@ const handleFetchProfile = async (req, res) => {
             throw CustomException('User not found!', 404);
         }
 
-        const gigs = await Gig.find({ userID: user._id }).populate('userID', 'username cover email description isSeller _id image');
+        const gigs = await Gig.find({ userID: user._id }).populate('userID', 'username fullname cover email description isSeller _id image');
         let ordersCount;
         if (user.isSeller) {
             const orderStatuses = await OrderStatus.find({ sellerID: user._id, status: "Completed" });

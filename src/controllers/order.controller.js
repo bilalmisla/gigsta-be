@@ -46,8 +46,8 @@ const getOrders = async (request, response) => {
                 { gigs: { $elemMatch: { sellerID: request.userID } } }
             ]
         })
-            .populate('buyerID', 'username email image country')
-            .populate('gigs.sellerID', 'username email image country').sort({ createdAt: -1 });
+            .populate('buyerID', 'username fullname email image country')
+            .populate('gigs.sellerID', 'username fullname email image country').sort({ createdAt: -1 });
 
         // Filter gigs for sellers
         const updatedOrders = orders.map(item => {
@@ -65,8 +65,8 @@ const getOrders = async (request, response) => {
         const orderStatuses = await OrderStatus.find({
             orderID: { $in: orderIDs }
         })
-            .populate('buyerID', 'username email image country')
-            .populate('sellerID', 'username email image country')
+            .populate('buyerID', 'username fullname email image country')
+            .populate('sellerID', 'username fullname email image country')
             .populate('gigID', 'title price') // adjust fields as needed
             .lean();
 
@@ -112,8 +112,8 @@ const getOrderDetailsById = async (request, response) => {
 
         // Find order by ID and populate related fields
         const order = await Order.findById(id)
-            .populate('buyerID', 'username email image country')
-            .populate('gigs.sellerID', 'username email image country isSeller');
+            .populate('buyerID', 'username fullname email image country')
+            .populate('gigs.sellerID', 'username fullname email image country isSeller');
 
         if (!order) {
             return response.status(404).send({ error: true, message: 'Order not found' });
@@ -130,7 +130,7 @@ const getOrderDetailsById = async (request, response) => {
         }
 
         const gig = await Gig.findById({ _id: gig_id })
-            .populate('userID', 'username country image createdAt email description isSeller');
+            .populate('userID', 'username fullname country image createdAt email description isSeller');
 
         if (!gig) {
             throw CustomException('Gig not found!', 404);

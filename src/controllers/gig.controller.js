@@ -64,7 +64,7 @@ const getGig = async (request, response) => {
     const { _id } = request.params;
 
     try {
-        const gig = await Gig.findOne({ _id }).populate('userID', 'username country image createdAt email description');
+        const gig = await Gig.findOne({ _id }).populate('userID', 'username fullname country image createdAt email description');
         if (!gig) {
             throw CustomException('Gig not found!', 404);
         }
@@ -93,7 +93,7 @@ const getGigs = async (request, response) => {
             })
         }
 
-        const gigs = await Gig.find(filters).sort({ [sort]: -1 }).populate('userID', 'username cover email description isSeller _id image');
+        const gigs = await Gig.find(filters).sort({ [sort]: -1 }).populate('userID', 'username fullname cover email description isSeller _id image');
         return response.send(gigs);
     }
     catch ({ message, status = 500 }) {
