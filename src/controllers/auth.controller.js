@@ -26,26 +26,49 @@ const sendVerificationEmail = async (email, username, token, fullname) => {
         to: email,
         subject: 'Action Required: Verify Your Email Address',
         html: `
-            <div class="logo">
-              <img src="https://gigsta.ai/media/logo-black-text.png" alt="Gigsta AI Logo" style="width: 50px; height: 50px;" />
-            </div>
-            <p><strong>Hi ${username},</strong></p>
-            <p style="display: flex; align-items: center; flex-direction: column; gap: 10px;">
-              <p>Your username is:</p>
-              <strong style="background-color: #f10Bad; color: #ffffff; padding: 14px 24px; border-radius: 8px;">${username}</strong>
-            </p>
-            <p>Thank you for signing up for <a href=${process.env.FRONTEND_URL} target="_blank">Gigsta.ai</a>! Please verify your email by clicking the link below:</p>
-            <p><a href="${verificationUrl}" style="style="
-            background-color:#f10bad;
-                                              font-size: 15px;
-                                              color: #ffffff;
-                                              text-decoration: none;
-                                              font-weight: 700;
-                                              padding: 14px 30px;
-                                              display: block;text-transform: uppercase;
-                                            " target="_blank">Verify Your Account</a></p>
-            <p>This link will expire in 24 hours.</p>
-            <p>Best regards, <br /> Gigsta Team</p>
+           <div style="max-width: 600px; margin: 0 auto; background: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; font-family: Arial,Helvetica,sans-serif; overflow: hidden;"><!-- Header -->
+<div style="padding: 35px 20px; text-align: center; background: #fafafa; border-bottom: 1px solid #ececec;"><img style="width: 70px; height: 70px; margin-bottom: 10px;" src="https://gigsta.ai/media/logo-black-text.png" alt="Gigsta AI" />
+<h2 style="margin: 0; color: #111827; font-size: 26px;">Welcome to Gigsta.ai</h2>
+</div>
+<!-- Body -->
+<div style="padding: 40px 35px; color: #374151; line-height: 1.7; font-size: 16px;">
+<p style="margin-top: 0;">Hi <strong>${fullname}</strong>,</p>
+<p>Thank you for signing up for <a style="color: #8b5cf6; text-decoration: none; font-weight: bold;" href="${process.env.FRONTEND_URL}" target="_blank" rel="noopener"> Gigsta.ai </a>.</p>
+<p>Your username for login is:</p>
+<div style="background: #f4f4f5; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; text-align: center; margin: 25px 0;"><span style="font-size: 18px; font-weight: bold; color: #111827;"> ${username} </span></div>
+<p>Please verify your email address by clicking the button below.</p>
+<div style="text-align: center; margin: 35px 0;"><a style="background: #F10BAD; color: #ffffff; text-decoration: none; font-size: 18px; font-weight: bold; padding: 16px 40px; border-radius: 8px; display: inline-block;" href="${verificationUrl}" target="_blank" rel="noopener"> Verify Email </a></div>
+<p style="color: #6b7280;">This verification link will expire in <strong>24 hours</strong>.</p>
+<p>If you didn't create this account, you can safely ignore this email.</p>
+<p style="margin-bottom: 25px;">Best regards,<br /> <strong>Gigsta Team</strong></p>
+</div>
+<div style="
+        padding:20px;
+        background:#fafafa;
+        border-top:1px solid #ececec;
+        text-align:center;
+        font-size:13px;
+        color:#9CA3AF;
+    ">
+
+        <div style="margin-bottom:12px;">
+            <a href="https://gigsta.ai/privacy-policy"
+               style="color:#6B7280;text-decoration:none;margin:0 12px;">
+                Privacy Policy
+            </a>
+
+            |
+
+            <a href="https://gigsta.ai/contact-us"
+               style="color:#6B7280;text-decoration:none;margin:0 12px;">
+                Contact Support
+            </a>
+        </div>
+
+        © ${year} ${companyName}. All rights reserved.
+
+    </div>
+</div>
         `
     };
 
@@ -59,14 +82,144 @@ const sendResetPasswordEmail = async (email, username, token) => {
         to: email,
         subject: 'Reset Your Password',
         html: `
-            <div class="logo">
-              <img src="https://gigsta.ai/media/logo-black-text.png" alt="Gigsta AI Logo" style="width: 50px; height: 50px;" />
+         <div style="max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;font-family:Arial,Helvetica,sans-serif;overflow:hidden;">
+
+    <!-- Header -->
+    <div style="padding:35px 20px;text-align:center;background:#fafafa;border-bottom:1px solid #ececec;">
+        <img src="https://gigsta.ai/media/logo-black-text.png"
+             alt="Gigsta AI"
+             style="width:70px;height:70px;margin-bottom:10px;" />
+
+        <h2 style="margin:0;color:#111827;font-size:26px;">
+            Reset Your Password
+        </h2>
+
+        <p style="margin:10px 0 0;color:#6b7280;">
+            Secure access to your Gigsta.ai account.
+        </p>
+    </div>
+
+    <!-- Body -->
+    <div style="padding:40px 35px;color:#374151;line-height:1.7;font-size:16px;">
+
+        <p style="margin-top:0;">
+            Hello <strong>${username}</strong>,
+        </p>
+
+        <p>
+            We received a request to reset the password for your
+            <strong>Gigsta.ai</strong> account.
+        </p>
+
+        <p>
+            Click the button below to create a new password.
+        </p>
+
+        <!-- Reset Button -->
+        <div style="text-align:center;margin:35px 0;">
+            <a href="${resetUrl}"
+               target="_blank"
+               style="
+                    background:#F10BAD;
+                    color:#ffffff;
+                    text-decoration:none;
+                    font-size:16px;
+                    font-weight:bold;
+                    padding:16px 40px;
+                    border-radius:8px;
+                    display:inline-block;
+               ">
+                Reset Password
+            </a>
+        </div>
+
+        <p style="font-size:14px;color:#6b7280;">
+            If the button doesn't work, copy and paste this link into your browser:
+        </p>
+
+        <div style="
+            background:#f9fafb;
+            border:1px solid #e5e7eb;
+            border-radius:8px;
+            padding:15px;
+            word-break:break-all;
+            font-size:14px;
+        ">
+            <a href="${resetUrl}"
+               target="_blank"
+               style="color:#000000;text-decoration:none;">
+                ${resetUrl}
+            </a>
+        </div>
+
+        <!-- Security Notice -->
+        <div style="
+            margin-top:30px;
+            padding:18px 20px;
+            background:#FAFAFA;
+            border:1px solid #E5E7EB;
+            border-left:5px solid #08F0DF;
+            border-radius:8px;
+        ">
+            <div style="
+                font-size:16px;
+                font-weight:600;
+                color:#111827;
+                margin-bottom:8px;
+            ">
+                🔒 Security Notice
             </div>
-            <p>Hello <strong>${username}</strong>,</p>
-            <p>We received a request to reset your password. Please click the link below to reset it:</p>
-            <p><a href="${resetUrl}" target="_blank">${resetUrl}</a></p>
-            <p>If you did not request this, you can safely ignore this email. This link will expire in 24 hours.</p>
-            <p>Best regards, <br /> Gigsta Team</p>
+
+            <div style="
+                color:#4B5563;
+                font-size:14px;
+                line-height:1.7;
+            ">
+                If you didn't request this password reset, you can safely ignore this email.
+                Your password will remain unchanged and no further action is required.
+            </div>
+        </div>
+
+        <p style="margin-top:30px;color:#6b7280;">
+            This password reset link will expire in
+            <strong>24 hours</strong>.
+        </p>
+
+        <p style="margin-top:40px;">
+            Best regards,<br>
+            <strong>Gigsta Team</strong>
+        </p>
+
+    </div>
+
+    <div style="
+        padding:20px;
+        background:#fafafa;
+        border-top:1px solid #ececec;
+        text-align:center;
+        font-size:13px;
+        color:#9CA3AF;
+    ">
+
+        <div style="margin-bottom:12px;">
+            <a href="https://gigsta.ai/privacy-policy"
+               style="color:#6B7280;text-decoration:none;margin:0 12px;">
+                Privacy Policy
+            </a>
+
+            |
+
+            <a href="https://gigsta.ai/contact-us"
+               style="color:#6B7280;text-decoration:none;margin:0 12px;">
+                Contact Support
+            </a>
+        </div>
+
+        © ${year} ${companyName}. All rights reserved.
+
+    </div>
+
+</div>
         `
     };
 
@@ -80,14 +233,144 @@ const sendConfirmationUpdateEmail = async (email, username, token) => {
         to: email,
         subject: 'Update Your Email',
         html: `
-            <div class="logo">
-              <img src="https://gigsta.ai/media/logo-black-text.png" alt="Gigsta AI Logo" style="width: 50px; height: 50px;" />
+            <div style="max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;font-family:Arial,Helvetica,sans-serif;overflow:hidden;">
+
+    <!-- Header -->
+    <div style="padding:35px 20px;text-align:center;background:#fafafa;border-bottom:1px solid #ececec;">
+        <img src="https://gigsta.ai/media/logo-black-text.png"
+             alt="Gigsta AI"
+             style="width:70px;height:70px;margin-bottom:10px;" />
+
+        <h2 style="margin:0;color:#111827;font-size:26px;">
+            Update Your Email
+        </h2>
+
+        <p style="margin:10px 0 0;color:#6b7280;">
+            Confirm your new email address for your Gigsta.ai account.
+        </p>
+    </div>
+
+    <!-- Body -->
+    <div style="padding:40px 35px;color:#374151;line-height:1.7;font-size:16px;">
+
+        <p style="margin-top:0;">
+            Hello <strong>${username}</strong>,
+        </p>
+
+        <p>
+            We received a request to update the email address associated with your
+            <strong>Gigsta.ai</strong> account.
+        </p>
+
+        <p>
+            To confirm this change, click the button below.
+        </p>
+
+        <!-- Update Button -->
+        <div style="text-align:center;margin:35px 0;">
+            <a href="${resetUrl}"
+               target="_blank"
+               style="
+                    background:#F10BAD;
+                    color:#ffffff;
+                    text-decoration:none;
+                    font-size:16px;
+                    font-weight:bold;
+                    padding:16px 40px;
+                    border-radius:8px;
+                    display:inline-block;
+               ">
+                Update Email
+            </a>
+        </div>
+
+        <p style="font-size:14px;color:#6b7280;">
+            If the button doesn't work, copy and paste this link into your browser:
+        </p>
+
+        <div style="
+            background:#f9fafb;
+            border:1px solid #e5e7eb;
+            border-radius:8px;
+            padding:15px;
+            word-break:break-all;
+            font-size:14px;
+        ">
+            <a href="${resetUrl}"
+               target="_blank"
+               style="color:#F10BAD;text-decoration:none;">
+                ${resetUrl}
+            </a>
+        </div>
+
+        <!-- Security Notice -->
+        <div style="
+            margin-top:30px;
+            padding:18px 20px;
+            background:#FAFAFA;
+            border:1px solid #E5E7EB;
+            border-left:5px solid #08F0DF;
+            border-radius:8px;
+        ">
+            <div style="
+                font-size:16px;
+                font-weight:600;
+                color:#111827;
+                margin-bottom:8px;
+            ">
+                🔒 Security Notice
             </div>
-            <p>Hello <strong>${username}</strong>,</p>
-            <p>We received a request to update your email. Please click the link below to update it:</p>
-            <p><a href="${resetUrl}" target="_blank" style="padding: 12px 20px; color: #ffffff; text-decoration: none; background-color: #f10Bad; border-radius: 10px;">Update Your Email</a></p>
-            <p>If you did not request this, you can safely ignore this email. This link will expire in 24 hours.</p>
-            <p>Best regards, <br /> Gigsta Team</p>
+
+            <div style="
+                color:#4B5563;
+                font-size:14px;
+                line-height:1.7;
+            ">
+                If you didn't request this email change, you can safely ignore this email.
+                Your current email address will remain unchanged until this request is confirmed.
+            </div>
+        </div>
+
+        <p style="margin-top:30px;color:#6b7280;">
+            This confirmation link will expire in
+            <strong>24 hours</strong>.
+        </p>
+
+        <p style="margin-top:40px;">
+            Best regards,<br>
+            <strong>Gigsta Team</strong>
+        </p>
+
+    </div>
+
+   <div style="
+        padding:20px;
+        background:#fafafa;
+        border-top:1px solid #ececec;
+        text-align:center;
+        font-size:13px;
+        color:#9CA3AF;
+    ">
+
+        <div style="margin-bottom:12px;">
+            <a href="https://gigsta.ai/privacy-policy"
+               style="color:#6B7280;text-decoration:none;margin:0 12px;">
+                Privacy Policy
+            </a>
+
+            |
+
+            <a href="https://gigsta.ai/contact-us"
+               style="color:#6B7280;text-decoration:none;margin:0 12px;">
+                Contact Support
+            </a>
+        </div>
+
+        © ${year} ${companyName}. All rights reserved.
+
+    </div>
+
+</div>
         `
     };
 
@@ -100,14 +383,162 @@ const sendConfirmAccountCreatedEmail = async (email, username, couponCode) => {
         to: email,
         subject: `Welcome to Gigsta AI, ${username}!`,
         html: `
-            <div class="logo">
-              <img src="https://gigsta.ai/media/logo-black-text.png" alt="Gigsta AI Logo" style="width: 50px; height: 50px;" />
+          <div style="max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;font-family:Arial,Helvetica,sans-serif;overflow:hidden;">
+
+    <!-- Header -->
+    <div style="padding:35px 20px;text-align:center;background:#fafafa;border-bottom:1px solid #ececec;">
+        <img src="https://gigsta.ai/media/logo-black-text.png"
+             alt="Gigsta AI"
+             style="width:70px;height:70px;margin-bottom:10px;" />
+
+        <h2 style="margin:0;color:#111827;font-size:26px;">
+            Welcome to Gigsta.ai 🎉
+        </h2>
+
+        <p style="margin:10px 0 0;color:#6b7280;">
+            Your freelance marketplace journey starts here.
+        </p>
+    </div>
+
+    <!-- Body -->
+    <div style="padding:40px 35px;color:#374151;line-height:1.7;font-size:16px;">
+
+        <p style="margin-top:0;">
+            Hi <strong>${username}</strong>,
+        </p>
+
+        <p>
+            Welcome to
+            <a href="${process.env.FRONTEND_URL}"
+               target="_blank"
+               style="color:#F10BAD;text-decoration:none;font-weight:600;">
+                Gigsta.ai
+            </a>!
+            We're excited to have you as part of our growing community.
+        </p>
+
+        <p>
+            Whether you're looking to hire talented freelancers or showcase your skills and sell services, Gigsta.ai makes it simple to connect, collaborate, and grow.
+        </p>
+
+        ${
+            couponCode
+                ? `
+        <!-- Welcome Gift -->
+        <div style="
+            margin:35px 0;
+            padding:22px;
+            background:#FAFAFA;
+            border:1px solid #E5E7EB;
+            border-left:5px solid #F10BAD;
+            border-radius:8px;
+            text-align:center;
+        ">
+            <div style="
+                font-size:16px;
+                font-weight:600;
+                color:#111827;
+                margin-bottom:12px;
+            ">
+                🎁 Welcome Gift
             </div>
-            <p>Hi <strong>${username}</strong>,</p>
-            <p>Welcome to <a href="${process.env.FRONTEND_URL}" target="_blank">Gigsta AI</a>! We're excited to have you on board.</p>
-            <p>Start exploring amazing gigs, connecting with top freelancers, and getting work done effortlessly.</p>
-            ${couponCode ? `<p style="padding: 15px; background-color: #f10Bad; color: white; border-radius: 8px; font-weight: bold; font-size: 16px; margin: 20px 0;">As a welcome gift, use code <strong>${couponCode}</strong> for 10% off your first checkout!</p>` : ''}
-            <p>Best regards, <br /> Gigsta Team</p>
+
+            <div style="
+                color:#4B5563;
+                font-size:14px;
+                margin-bottom:18px;
+                line-height:1.6;
+            ">
+                Enjoy <strong>10% OFF</strong> your first order with this exclusive coupon.
+            </div>
+
+            <div style="
+                display:inline-block;
+                padding:14px 28px;
+                border:2px dashed #F10BAD;
+                border-radius:8px;
+                font-size:24px;
+                font-weight:bold;
+                color:#F10BAD;
+                letter-spacing:2px;
+                background:#FFF7FC;
+            ">
+                ${couponCode}
+            </div>
+
+            <div style="
+                margin-top:15px;
+                color:#6B7280;
+                font-size:13px;
+            ">
+                Use this code during checkout to receive your discount.
+            </div>
+        </div>
+        `
+                : ''
+        }
+
+        <div style="
+            margin-top:30px;
+            padding:20px;
+            background:#FAFAFA;
+            border:1px solid #E5E7EB;
+            border-left:5px solid #08F0DF;
+            border-radius:8px;
+        ">
+            <div style="
+                font-size:16px;
+                font-weight:600;
+                color:#111827;
+                margin-bottom:10px;
+            ">
+                🚀 Get Started
+            </div>
+
+            <div style="
+                color:#4B5563;
+                font-size:14px;
+                line-height:1.7;
+            ">
+                Complete your profile, explore available gigs, connect with talented freelancers, and start growing your business with Gigsta.ai.
+            </div>
+        </div>
+
+        <p style="margin-top:40px;">
+            Best regards,<br>
+            <strong>Gigsta Team</strong>
+        </p>
+
+    </div>
+
+   <div style="
+        padding:20px;
+        background:#fafafa;
+        border-top:1px solid #ececec;
+        text-align:center;
+        font-size:13px;
+        color:#9CA3AF;
+    ">
+
+        <div style="margin-bottom:12px;">
+            <a href="https://gigsta.ai/privacy-policy"
+               style="color:#6B7280;text-decoration:none;margin:0 12px;">
+                Privacy Policy
+            </a>
+
+            |
+
+            <a href="https://gigsta.ai/contact-us"
+               style="color:#6B7280;text-decoration:none;margin:0 12px;">
+                Contact Support
+            </a>
+        </div>
+
+        © ${year} ${companyName}. All rights reserved.
+
+    </div>
+
+</div>
         `
     };
 
@@ -120,13 +551,100 @@ const sendAccountDeletedEmail = async (email, username) => {
         to: email,
         subject: `Delete account, ${username}!`,
         html: `
-            <div class="logo">
-              <img src="https://gigsta.ai/media/logo-black-text.png" alt="Gigsta AI Logo" style="width: 50px; height: 50px;" />
+           <div style="max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;font-family:Arial,Helvetica,sans-serif;overflow:hidden;">
+
+    <!-- Header -->
+    <div style="padding:35px 20px;text-align:center;background:#fafafa;border-bottom:1px solid #ececec;">
+        <img src="https://gigsta.ai/media/logo-black-text.png"
+             alt="Gigsta AI"
+             style="width:70px;height:70px;margin-bottom:10px;" />
+
+        <h2 style="margin:0;color:#111827;font-size:26px;">
+            Account Deleted
+        </h2>
+
+        <p style="margin:10px 0 0;color:#6b7280;">
+            Your Gigsta.ai account has been permanently removed.
+        </p>
+    </div>
+
+    <!-- Body -->
+    <div style="padding:40px 35px;color:#374151;line-height:1.7;font-size:16px;">
+
+        <p style="margin-top:0;">
+            Hi <strong>${username}</strong>,
+        </p>
+
+        <p>
+            As requested, your <strong>Gigsta.ai</strong> account has been successfully deleted.
+        </p>
+
+        <div style="
+            margin:30px 0;
+            padding:20px;
+            background:#FAFAFA;
+            border:1px solid #E5E7EB;
+            border-left:5px solid rgb(240, 66, 8);
+            border-radius:8px;
+        ">
+            <div style="
+                font-size:16px;
+                font-weight:600;
+                color:#111827;
+                margin-bottom:10px;
+            ">
+                ✓ Confirmation
             </div>
-            <p>Hi <strong>${username}</strong>,</p>
-            <p>As per your request, your Gigsta.AI account was deleted.</p>
-            <p>We wish you best of luck moving forward.</p>
-            <p>Best regards, <br /> Gigsta Team</p>
+
+            <div style="
+                color:#4B5563;
+                font-size:14px;
+                line-height:1.7;
+            ">
+                Your account has been removed from Gigsta.ai. If this deletion was made in error or you did not authorize it, please contact our support team as soon as possible.
+            </div>
+        </div>
+
+        <p>
+            We're sorry to see you go and truly appreciate the time you spent with our community.
+            We wish you all the best in your future endeavors.
+        </p>
+
+        <p style="margin-top:40px;">
+            Best regards,<br>
+            <strong>Gigsta Team</strong>
+        </p>
+
+    </div>
+
+   <div style="
+        padding:20px;
+        background:#fafafa;
+        border-top:1px solid #ececec;
+        text-align:center;
+        font-size:13px;
+        color:#9CA3AF;
+    ">
+
+        <div style="margin-bottom:12px;">
+            <a href="https://gigsta.ai/privacy-policy"
+               style="color:#6B7280;text-decoration:none;margin:0 12px;">
+                Privacy Policy
+            </a>
+
+            |
+
+            <a href="https://gigsta.ai/contact-us"
+               style="color:#6B7280;text-decoration:none;margin:0 12px;">
+                Contact Support
+            </a>
+        </div>
+
+        © ${year} ${companyName}. All rights reserved.
+
+    </div>
+
+</div>
         `
     };
 
