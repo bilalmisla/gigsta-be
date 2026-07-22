@@ -1,5 +1,5 @@
 const { OpenAI } = require("openai");
-const path = require("path");
+const path = require("node:path");
 const Inquiry = require("../models/inquiry.model.js");
 const Gig = require("../models/gig.model.js");
 const { extractMultipleFiles } = require("../utils/fileExtractor.js");
@@ -7,6 +7,65 @@ const { extractMultipleFiles } = require("../utils/fileExtractor.js");
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY, // Ensure this is set in your .env
 });
+
+const INITIAL_PROJECT_DETAILS = "Chat session started - awaiting full project requirements.";
+const BOOKING_LINK = 'https://calendar.google.com/calendar/appointments/schedules/AcZssZ33yLOCv7DUeruVilUgjx9ybRByluRS8gt05MZbosEqFT6KmQ5AEd62y02rx7Bjs_ViZw86wNaa';
+const DEFAULT_FRONTEND_URL = 'https://gigsta.ai';
+const NO_MATCH_PATTERNS = [
+  'no exact match',
+  "don't have exact",
+  'no gigs',
+  "couldn't find",
+  "don't currently have",
+];
+const REQUIREMENT_KEYWORDS = [
+  'requirement', 'requirements', 'project', 'brief', 'spec', 'specification',
+  'logo', 'website', 'design', 'budget', 'deadline', 'due', 'contact', 'email',
+  'order', 'deliver', 'scope', 'timeline', 'need', 'want', 'create', 'build', 'launch',
+];
+
+/**
+ * Lightweight email check without nested regex quantifiers (Sonar S5852).
+ */
+const isValidEmail = (email) => {
+  if (typeof email !== 'string' || email.includes(' ')) return false;
+  const at = email.indexOf('@');
+  if (at <= 0 || at !== email.lastIndexOf('@')) return false;
+  const domain = email.slice(at + 1);
+  const dot = domain.lastIndexOf('.');
+  return dot > 0 && dot < domain.length - 1;
+};
+
+const stripHtml = (html) => {
+  if (!html) return 'N/A';
+  let result = '';
+  let insideTag = false;
+  for (const char of html) {
+    if (char === '<') {
+      insideTag = true;
+    } else if (char === '>') {
+      insideTag = false;
+    } else if (!insideTag) {
+      result += char;
+    }
+  }
+  return result || 'N/A';
+};
+
+/**
+ * Parse the first JSON object embedded in free-form AI text without regex backtracking.
+ */
+const parseJsonFromText = (text) => {
+  if (!text || typeof text !== "string") return null;
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start === -1 || end <= start) return null;
+  try {
+    return JSON.parse(text.slice(start, end + 1));
+  } catch {
+    return null;
+  }
+};
 
 /**
  * Downloads any file type from a Cloudinary URL and returns it as a Buffer.
@@ -66,77 +125,29 @@ const fetchRemoteFile = async (url, fallbackName) => {
 
 const buildRemoteFilesFromUrls = async (fileUrls, fileNames = []) => {
   return Promise.all(
-    fileUrls.map(async (url, index) => {
-      return fetchRemoteFile(url, fileNames[index]);
-    })
+    fileUrls.map((url, index) => fetchRemoteFile(url, fileNames[index]))
   );
 };
 
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
-const INITIAL_PROJECT_DETAILS = "Chat session started - awaiting full project requirements.";
+const detectRecommendationLoop = (msgs) => {
+  const assistantMessages = msgs.filter((m) => m.role === 'assistant');
+  if (assistantMessages.length < 3) return false;
 
-const chatHandler = async (req, res, next) => {
-  try {
-    let { messages, gigId, fileUrls, fileNames, inquiryId: incomingInquiryId } = req.body;
-
-    // Handle FormData: messages comes as JSON string when files are attached
-    if (typeof messages === 'string') {
-      try {
-        messages = JSON.parse(messages);
-      } catch (e) {
-        return res.status(400).send("Invalid messages format");
-      }
+  const lastThreeAssistant = assistantMessages.slice(-3);
+  let matchCount = 0;
+  for (const msg of lastThreeAssistant) {
+    const content = msg.content?.toLowerCase() || '';
+    if (NO_MATCH_PATTERNS.some((pattern) => content.includes(pattern))) {
+      matchCount++;
     }
+  }
 
-    if (!messages || !Array.isArray(messages)) {
-      return res.status(400).send("Messages array is required");
-    }
+  return matchCount >= 2;
+};
 
-    let remoteFiles = [];
-    // Initialize inquiryId from incoming request if provided so we can reattach context
-    let inquiryId = incomingInquiryId || null;
-    if (fileUrls && Array.isArray(fileUrls) && fileUrls.length > 0) {
-      try {
-        remoteFiles = await buildRemoteFilesFromUrls(fileUrls, Array.isArray(fileNames) ? fileNames : []);
-      } catch (remoteFetchError) {
-        console.error('Error fetching remote files from Cloudinary:', remoteFetchError);
-      }
-    }
-
-    // Detect if we're in a recommendation loop
-    const detectRecommendationLoop = (msgs) => {
-      const assistantMessages = msgs.filter(m => m.role === 'assistant');
-      if (assistantMessages.length < 3) return false;
-
-      // Check if the last 3 assistant messages contain "no exact matches" or similar patterns
-      const lastThreeAssistant = assistantMessages.slice(-3);
-      const noMatchPatterns = [
-        'no exact match',
-        'don\'t have exact',
-        'no gigs',
-        'couldn\'t find',
-        'don\'t currently have'
-      ];
-
-      let matchCount = 0;
-      for (const msg of lastThreeAssistant) {
-        for (const pattern of noMatchPatterns) {
-          if (msg.content.toLowerCase().includes(pattern)) {
-            matchCount++;
-            break;
-          }
-        }
-      }
-
-      // If 2 or more of the last 3 messages mention no matches, we're likely in a loop
-      return matchCount >= 2;
-    };
-
-    const bookingLink = 'https://calendar.google.com/calendar/appointments/schedules/AcZssZ33yLOCv7DUeruVilUgjx9ybRByluRS8gt05MZbosEqFT6KmQ5AEd62y02rx7Bjs_ViZw86wNaa';
-
-    const systemPrompt = {
-      role: "system",
-      content: `
+const buildSystemPrompt = () => ({
+  role: "system",
+  content: `
         // SYSTEM INSTRUCTIONS FOR AI GIGSTA ASSISTANT
 
 ## Assistant Identity and Purpose
@@ -281,152 +292,223 @@ For all inquiries, refer to the *Information Collection Guides* and ask relevant
 ## Final Notes
 - If a user’s question is **not related to our services or about/what is gigsta**, respond:  
   **"Thanks for your request! Currently, we don’t offer services in that area. Here are the services we do provide:"**   
-  (Then list the currently available service categories clearly.) and if you'd like to chat with a team member directly, feel free to book a session here: ${bookingLink}*  
+  (Then list the currently available service categories clearly.) and if you'd like to chat with a team member directly, feel free to book a session here: ${BOOKING_LINK}*  
   ## IMPORTANT: Loop Prevention and Direct CTA
 - If you detect the user has been through recommendation loops (asked multiple times without finding exact matches), STOP asking follow-up questions
 - Instead, provide a DIRECT booking CTA: "We couldn't find an exact match for your specific requirements. However, our team specializes in custom solutions. Book a consultation with us and we'll connect you with the right person to build exactly what you need."
  `
-    };
+});
 
-    // Filter out UI specific gig objects from frontend messages
-    const formattedMessages = [
-      systemPrompt,
-      ...messages.map(m => {
-        const { gigs, ...rest } = m;
-        return rest;
-      })
-    ];
+const formatFileSummaries = (items) =>
+  items
+    .map(
+      (item) =>
+        `File: ${item.fileName}\nSummary: ${item.summary || 'No summary available'}\nKey Details: ${Array.isArray(item.keyDetails) && item.keyDetails.length ? item.keyDetails.join('; ') : 'None'}\n`
+    )
+    .join('\n');
 
-    let extractedContents = [];
-    let extractedData = {};
-    let matchedGigs = [];
+const createFallbackInquiry = async () => {
+  const fallbackInquiry = new Inquiry({
+    name: null,
+    email: null,
+    projectDetails: INITIAL_PROJECT_DETAILS,
+  });
+  await fallbackInquiry.save();
+  return fallbackInquiry._id;
+};
 
-    const allUploadedFiles = [...(req.files || []), ...remoteFiles];
+const persistInquiryFiles = async (inquiryId, allUploadedFiles, extractedContents) => {
+  try {
+    const inquiry = await Inquiry.findById(inquiryId);
+    if (!inquiry) return;
+    const fileReferences = allUploadedFiles.map((file) => file.sourceUrl || file.originalname);
+    inquiry.files = [...new Set([...(inquiry.files || []), ...fileReferences])];
+    inquiry.fileUploadChoice = 'yes';
+    inquiry.extractedContent = [...(inquiry.extractedContent || []), ...extractedContents];
+    await inquiry.save();
+  } catch (saveErr) {
+    console.error('Failed to persist inquiry files/extraction:', saveErr);
+  }
+};
 
-    // If we have an inquiry with previously extracted content, load it into formattedMessages
-    if (inquiryId) {
-      try {
-        const existingInquiry = await Inquiry.findById(inquiryId);
-        if (existingInquiry && existingInquiry.extractedContent && existingInquiry.extractedContent.length > 0) {
-          const fileSummaries = existingInquiry.extractedContent.map((item) => `File: ${item.fileName}\nSummary: ${item.summary || 'No summary available'}\nKey Details: ${Array.isArray(item.keyDetails) && item.keyDetails.length ? item.keyDetails.join('; ') : 'None'}\n`).join('\n');
-          formattedMessages.push({ role: 'user', content: `Previously extracted content for this inquiry:\n\n${fileSummaries}` });
-        }
-      } catch (e) {
-        console.error('Failed to load existing inquiry extracted content:', e);
-      }
+const classifyHasRequirements = async (extractedContents) => {
+  const buildExtractionPrompt = (extracted) => {
+    const text = ((extracted.extractedText || '') + '\n' + (extracted.summary || '') + '\n' + (Array.isArray(extracted.keyDetails) ? extracted.keyDetails.join('; ') : '')).trim();
+    return `File: ${extracted.fileName}\nExtractedText: ${text}`;
+  };
+
+  const fileAnalysisPrompt = `You are a Gigsta intake assistant. Determine whether the extracted content below contains actual project requirements or service-related information for a digital services request. Answer strictly with JSON: {"hasRequirements": true|false, "reason": "short reason"}. Do not describe the image or file content. Only decide if requirements are present in the extracted text.`;
+
+  const classificationResponse = await openai.chat.completions.create({
+    model: 'gpt-4.1',
+    messages: [
+      { role: 'system', content: fileAnalysisPrompt },
+      { role: 'user', content: extractedContents.map(buildExtractionPrompt).join('\n\n---\n\n') },
+    ],
+    temperature: 0,
+    max_tokens: 250,
+  });
+
+  let hasRequirements = false;
+  try {
+    const classificationText = classificationResponse.choices[0].message.content || '';
+    const parsed = parseJsonFromText(classificationText);
+    if (parsed) {
+      hasRequirements = Boolean(parsed.hasRequirements);
+    }
+  } catch (parseErr) {
+    console.error('Failed to parse requirement classification:', parseErr);
+  }
+
+  if (hasRequirements) return true;
+
+  const fallbackText = extractedContents
+    .map((extracted) => `${extracted.extractedText || ''} ${extracted.summary || ''} ${(Array.isArray(extracted.keyDetails) ? extracted.keyDetails.join(' ') : '')}`)
+    .join(' ')
+    .toLowerCase();
+  const fallbackMatch = REQUIREMENT_KEYWORDS.some((kw) => fallbackText.includes(kw));
+  if (fallbackMatch && fallbackText.length > 80) {
+    console.log('Fallback requirement detection passed for uploaded file content.');
+    return true;
+  }
+  return false;
+};
+
+const processUploadedFiles = async ({
+  allUploadedFiles,
+  formattedMessages,
+  inquiryId,
+}) => {
+  let nextInquiryId = inquiryId;
+  let extractedContents = [];
+
+  try {
+    extractedContents = await extractMultipleFiles(allUploadedFiles);
+    const hasRequirements = await classifyHasRequirements(extractedContents);
+
+    if (!nextInquiryId) {
+      nextInquiryId = await createFallbackInquiry();
     }
 
-    if (allUploadedFiles.length > 0) {
-      formattedMessages.push({
-        role: 'system',
-        content: 'The user has attached one or more files. Use extracted file content to identify project requirements and relate the results to Gigsta services. If a file does not contain any project requirements or requirements-related content, do not describe the file and instead respond with: "Sorry, I can’t process this image because it is not related to the project or our services."'
-      });
+    await persistInquiryFiles(nextInquiryId, allUploadedFiles, extractedContents);
+
+    const allUploadsAreImages = allUploadedFiles.every(
+      (f) => /(\.jpe?g|\.png)$/i.test(f.originalname) || f.mimetype?.startsWith('image/')
+    );
+
+    if (!hasRequirements && allUploadsAreImages) {
+      return {
+        inquiryId: nextInquiryId,
+        extractedContents,
+        earlyResponse: {
+          role: 'assistant',
+          content: "Sorry, I can’t process this image because it is not related to the project or our services.",
+          isConfirmed: false,
+          inquiryId: nextInquiryId,
+        },
+      };
     }
 
-    // Check for recommendation loop BEFORE making API calls
-    const inRecommendationLoop = detectRecommendationLoop(formattedMessages);
+    formattedMessages.push({
+      role: 'user',
+      content: `Here is the extracted content from the attached files:\n\n${formatFileSummaries(extractedContents)}`,
+    });
+  } catch (fileErr) {
+    console.error('Error extracting uploaded files:', fileErr);
+  }
 
-    if (allUploadedFiles.length > 0) {
-      try {
-        extractedContents = await extractMultipleFiles(allUploadedFiles);
+  return { inquiryId: nextInquiryId, extractedContents, earlyResponse: null };
+};
 
-        const buildExtractionPrompt = (extracted) => {
-          const text = ((extracted.extractedText || '') + '\n' + (extracted.summary || '') + '\n' + (Array.isArray(extracted.keyDetails) ? extracted.keyDetails.join('; ') : '')).trim();
-          return `File: ${extracted.fileName}\nExtractedText: ${text}`;
-        };
-
-        const fileAnalysisPrompt = `You are a Gigsta intake assistant. Determine whether the extracted content below contains actual project requirements or service-related information for a digital services request. Answer strictly with JSON: {"hasRequirements": true|false, "reason": "short reason"}. Do not describe the image or file content. Only decide if requirements are present in the extracted text.`;
-
-        const classificationMessages = [
-          { role: 'system', content: fileAnalysisPrompt },
-          { role: 'user', content: extractedContents.map(buildExtractionPrompt).join('\n\n---\n\n') }
-        ];
-
-        const classificationResponse = await openai.chat.completions.create({
-          model: 'gpt-4.1',
-          messages: classificationMessages,
-          temperature: 0,
-          max_tokens: 250,
-        });
-
-        let hasRequirements = false;
-        try {
-          const classificationText = classificationResponse.choices[0].message.content || '';
-          const jsonMatch = classificationText.match(/\{[\s\S]*\}/);
-          if (jsonMatch) {
-            const parsed = JSON.parse(jsonMatch[0]);
-            hasRequirements = Boolean(parsed.hasRequirements);
-          }
-        } catch (parseErr) {
-          console.error('Failed to parse requirement classification:', parseErr);
-        }
-
-        if (!hasRequirements) {
-          const fallbackText = extractedContents
-            .map((extracted) => `${extracted.extractedText || ''} ${extracted.summary || ''} ${(Array.isArray(extracted.keyDetails) ? extracted.keyDetails.join(' ') : '')}`)
-            .join(' ')
-            .toLowerCase();
-          const fallbackKeywords = ['requirement', 'requirements', 'project', 'brief', 'spec', 'specification', 'logo', 'website', 'design', 'budget', 'deadline', 'due', 'contact', 'email', 'order', 'deliver', 'scope', 'timeline', 'need', 'want', 'create', 'build', 'launch'];
-          const fallbackMatch = fallbackKeywords.some((kw) => fallbackText.includes(kw));
-          if (fallbackMatch && fallbackText.length > 80) {
-            hasRequirements = true;
-            console.log('Fallback requirement detection passed for uploaded file content.');
-          }
-        }
-
-        if (!inquiryId) {
-          const fallbackInquiry = new Inquiry({ name: null, email: null, projectDetails: INITIAL_PROJECT_DETAILS });
-          await fallbackInquiry.save();
-          inquiryId = fallbackInquiry._id;
-        }
-
-        try {
-          const inquiry = await Inquiry.findById(inquiryId);
-          if (inquiry) {
-            const fileReferences = allUploadedFiles.map((file) => file.sourceUrl || file.originalname);
-            inquiry.files = [...new Set([...(inquiry.files || []), ...fileReferences])];
-            inquiry.fileUploadChoice = 'yes';
-            inquiry.extractedContent = [...(inquiry.extractedContent || []), ...extractedContents];
-            await inquiry.save();
-          }
-        } catch (saveErr) {
-          console.error('Failed to persist inquiry files/extraction:', saveErr);
-        }
-
-        const allUploadsAreImages = allUploadedFiles.every(
-          (f) => /(\.jpe?g|\.png)$/i.test(f.originalname) || (f.mimetype && f.mimetype.startsWith('image/'))
-        );
-
-        if (!hasRequirements && allUploadsAreImages) {
-          return res.status(200).json({
-            role: 'assistant',
-            content: "Sorry, I can’t process this image because it is not related to the project or our services.",
-            isConfirmed: false,
-            inquiryId,
-          });
-        }
-
-        const fileSummaries = extractedContents.map((item) => `File: ${item.fileName}\nSummary: ${item.summary || 'No summary available'}\nKey Details: ${Array.isArray(item.keyDetails) && item.keyDetails.length ? item.keyDetails.join('; ') : 'None'}\n`).join('\n');
-        formattedMessages.push({
-          role: 'user',
-          content: `Here is the extracted content from the attached files:\n\n${fileSummaries}`
-        });
-      } catch (fileErr) {
-        console.error('Error extracting uploaded files:', fileErr);
-      }
+const upsertLeadInquiry = async ({ extractedName, extractedEmail, gigId }) => {
+  let leadInquiry = await Inquiry.findOne({ email: extractedEmail, webhookSent: false }).sort({ createdAt: -1 });
+  if (!leadInquiry) {
+    leadInquiry = new Inquiry({
+      name: extractedName,
+      email: extractedEmail,
+      projectDetails: INITIAL_PROJECT_DETAILS,
+      budget: null,
+      gigId: gigId || undefined,
+    });
+  } else {
+    leadInquiry.name = extractedName;
+    leadInquiry.email = extractedEmail;
+    if (!leadInquiry.gigId && gigId) {
+      leadInquiry.gigId = gigId;
     }
+  }
+  await leadInquiry.save();
+  return leadInquiry._id;
+};
 
-    // Step 1: Use AI common sense to verify if the user's last message is a confirmation
-    let isConfirmed = false;
-    try {
-      const extraction = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        response_format: { type: "json_object" },
-        messages: [
-          ...formattedMessages,
-          {
-            role: "system",
-            content: `Analyze the conversation. Check if the user's latest message is explicitly confirming their project details to proceed (e.g., saying "yes", "proceed", "confirmed", "go ahead", or any relevant English word/phrase with the same meaning).
+const saveConfirmedInquiry = async ({ latestInquiry, confirmedName, confirmedEmail, extracted, gigId }) => {
+  let inquiry = latestInquiry;
+  if (!inquiry) {
+    inquiry = new Inquiry({
+      name: confirmedName,
+      email: confirmedEmail,
+      projectDetails: extracted.projectDetails || INITIAL_PROJECT_DETAILS,
+      budget: extracted.budget || null,
+      gigId: gigId || undefined,
+    });
+  } else {
+    inquiry.name = confirmedName;
+    inquiry.email = confirmedEmail;
+    inquiry.projectDetails = extracted.projectDetails || inquiry.projectDetails || INITIAL_PROJECT_DETAILS;
+    inquiry.budget = extracted.budget || inquiry.budget || null;
+    if (!inquiry.gigId && gigId) {
+      inquiry.gigId = gigId;
+    }
+  }
+  await inquiry.save();
+  return inquiry._id;
+};
+
+const buildGigSummaries = (gigs) => {
+  const frontendUrl = process.env.FRONTEND_URL || DEFAULT_FRONTEND_URL;
+  return gigs
+    .map((gig, i) => {
+      const description = stripHtml(gig.description);
+      return `${i + 1}. Title: ${gig.title}\n- Gig Id: ${gig._id}\n- Category: ${gig.category}\n- Description: ${description}\n- Short Summary: ${gig.shortDesc || 'N/A'}\n- Delivery Time: ${gig.deliveryTime} days\n- Revisions: ${gig.revisionNumber}\n- Features: ${gig.features?.join(', ') || 'N/A'}\n- Price: $${gig.price}\n- Checkout URL: ${frontendUrl}/pay/${gig._id}`;
+    })
+    .join('\n\n');
+};
+
+const pushMatchInstructions = ({
+  formattedMessages,
+  gigs,
+  extracted,
+  safeQuery,
+  inRecommendationLoop,
+  confidenceThreshold,
+}) => {
+  if (gigs.length > 0 && extracted.confidenceScore >= confidenceThreshold) {
+    formattedMessages.push({
+      role: "system",
+      content: `SYSTEM INSTRUCTION: The user has confirmed. Here are the matching gigs from our database. Present these gigs to the user enthusiastically and provide their checkout URLs so they can make a purchase:\n\n${buildGigSummaries(gigs)}`,
+    });
+  } else if (inRecommendationLoop || extracted.confidenceScore < confidenceThreshold) {
+    formattedMessages.push({
+      role: "system",
+      content: `SYSTEM INSTRUCTION: The user confirmed their request, but we don't have exact matches for their specific requirements. Instead of asking more questions, provide a DIRECT next step. Say something like: "We couldn't find an exact match for your specific requirements. However, our team specializes in custom solutions. Book a consultation with us and we'll connect you with the right person to build exactly what you need." Then provide the booking link: ${BOOKING_LINK}`,
+    });
+  } else {
+    formattedMessages.push({
+      role: "system",
+      content: `SYSTEM INSTRUCTION: The user has confirmed, but no gigs were found for the query "${safeQuery}". Let the user know we don't have exact matches but provide a direct booking CTA instead of asking more questions. Booking link: ${BOOKING_LINK}`,
+    });
+  }
+};
+
+const extractConversationIntent = async (formattedMessages) => {
+  const extraction = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    response_format: { type: "json_object" },
+    messages: [
+      ...formattedMessages,
+      {
+        role: "system",
+        content: `Analyze the conversation. Check if the user's latest message is explicitly confirming their project details to proceed (e.g., saying "yes", "proceed", "confirmed", "go ahead", or any relevant English word/phrase with the same meaning).
               Return a JSON object strictly with these keys: 
               - "isConfirmed": boolean (true ONLY if the user is making a final confirmation to proceed)
               - "name": string (if available)
@@ -434,243 +516,348 @@ For all inquiries, refer to the *Information Collection Guides* and ask relevant
               - "budget": string (if available, e.g., "$500-$1000", "budget not specified")
               - "projectDetails": string (summary of their project)
               - "searchQuery": string (1-2 word keyword like 'logo', 'web design', 'video editing' based on their needs)
-              - "confidenceScore": number (0-100, how confident you are that we can find a match)`
-          }
-        ],
-        temperature: 0
-      });
+              - "confidenceScore": number (0-100, how confident you are that we can find a match)`,
+      },
+    ],
+    temperature: 0,
+  });
 
-      const extracted = JSON.parse(extraction.choices[0].message.content);
-      const confidenceThreshold = 50; // Only proceed if confidence > 50%
+  return JSON.parse(extraction.choices[0].message.content);
+};
 
-      const extractedName = (extracted.name || "").trim();
-      const extractedEmail = (extracted.email || "").trim().toLowerCase();
-      if (extractedName && EMAIL_PATTERN.test(extractedEmail)) {
-        let leadInquiry = await Inquiry.findOne({ email: extractedEmail, webhookSent: false }).sort({ createdAt: -1 });
-        if (!leadInquiry) {
-          leadInquiry = new Inquiry({
-            name: extractedName,
-            email: extractedEmail,
-            projectDetails: INITIAL_PROJECT_DETAILS,
-            budget: null,
-            gigId: gigId || undefined,
-          });
-        } else {
-          leadInquiry.name = extractedName;
-          leadInquiry.email = extractedEmail;
-          if (!leadInquiry.gigId && gigId) {
-            leadInquiry.gigId = gigId;
-          }
-        }
-        await leadInquiry.save();
-        inquiryId = leadInquiry._id;
-      }
+const resolveLatestInquiry = async (inquiryId, extractedEmail) => {
+  const knownInquiry = inquiryId ? await Inquiry.findById(inquiryId) : null;
+  if (knownInquiry) return knownInquiry;
+  if (!isValidEmail(extractedEmail)) return null;
+  return Inquiry.findOne({ email: extractedEmail, webhookSent: false }).sort({ createdAt: -1 });
+};
 
-      // Ensure the AI actually agrees that this is a confirmation
-      if (extracted.isConfirmed && extracted.searchQuery) {
-        const knownInquiry = inquiryId ? await Inquiry.findById(inquiryId) : null;
-        const latestInquiry = knownInquiry || (EMAIL_PATTERN.test(extractedEmail)
-          ? await Inquiry.findOne({ email: extractedEmail, webhookSent: false }).sort({ createdAt: -1 })
-          : null);
-        const knownName = (latestInquiry?.name || "").trim();
-        const knownEmail = (latestInquiry?.email || "").trim().toLowerCase();
-        const confirmedName = (extracted.name || knownName || "").trim();
-        const confirmedEmail = (extracted.email || knownEmail || "").trim().toLowerCase();
+const getMissingIdentityFields = (confirmedName, confirmedEmail) => {
+  const missingFields = [];
+  if (!confirmedName) missingFields.push("name");
+  if (!isValidEmail(confirmedEmail)) missingFields.push("email");
+  return missingFields;
+};
 
-        const missingFields = [];
-        if (!confirmedName) missingFields.push("name");
-        if (!EMAIL_PATTERN.test(confirmedEmail)) missingFields.push("email");
+const processConfirmedRequest = async ({
+  formattedMessages,
+  latestInquiry,
+  confirmedName,
+  confirmedEmail,
+  extracted,
+  gigId,
+  inRecommendationLoop,
+  confidenceThreshold,
+}) => {
+  const nextInquiryId = await saveConfirmedInquiry({
+    latestInquiry,
+    confirmedName,
+    confirmedEmail,
+    extracted,
+    gigId,
+  });
 
-        if (missingFields.length > 0) {
-          const missingText = missingFields.length === 2 ? "name and email" : missingFields[0];
-          formattedMessages.push({
-            role: "system",
-            content: `SYSTEM INSTRUCTION: The user is trying to confirm, but ${missingText} is missing. Ask for the missing ${missingText} in one short friendly message and do not confirm or finalize yet.`
-          });
-        } else {
-          isConfirmed = true;
-          extractedData = {
-            ...extracted,
-            name: confirmedName,
-            email: confirmedEmail,
-          };
+  const safeQuery = extracted.searchQuery;
+  const gigs = await Gig.find({
+    $or: [
+      { title: { $regex: safeQuery, $options: 'i' } },
+      { category: { $regex: safeQuery, $options: 'i' } },
+    ],
+  }).populate('userID', 'username image').limit(3);
 
-          let inquiry = latestInquiry;
-          if (!inquiry) {
-            inquiry = new Inquiry({
-              name: confirmedName,
-              email: confirmedEmail,
-              projectDetails: extracted.projectDetails || INITIAL_PROJECT_DETAILS,
-              budget: extracted.budget || null,
-              gigId: gigId || undefined,
-            });
-          } else {
-            inquiry.name = confirmedName;
-            inquiry.email = confirmedEmail;
-            inquiry.projectDetails = extracted.projectDetails || inquiry.projectDetails || INITIAL_PROJECT_DETAILS;
-            inquiry.budget = extracted.budget || inquiry.budget || null;
-            if (!inquiry.gigId && gigId) {
-              inquiry.gigId = gigId;
-            }
-          }
-          await inquiry.save();
-          inquiryId = inquiry._id;
+  pushMatchInstructions({
+    formattedMessages,
+    gigs,
+    extracted,
+    safeQuery,
+    inRecommendationLoop,
+    confidenceThreshold,
+  });
 
-          const safeQuery = extracted.searchQuery;
-          const gigs = await Gig.find({
-            $or: [
-              { title: { $regex: safeQuery, $options: 'i' } },
-              { category: { $regex: safeQuery, $options: 'i' } }
-            ]
-          }).populate('userID', 'username image').limit(3);
+  return {
+    isConfirmed: true,
+    extractedData: {
+      ...extracted,
+      name: confirmedName,
+      email: confirmedEmail,
+    },
+    matchedGigs: gigs,
+    inquiryId: nextInquiryId,
+  };
+};
 
-          matchedGigs = gigs;
+const handleConfirmationFlow = async ({
+  formattedMessages,
+  inquiryId,
+  gigId,
+  inRecommendationLoop,
+}) => {
+  const result = {
+    isConfirmed: false,
+    extractedData: {},
+    matchedGigs: [],
+    inquiryId,
+  };
 
-          if (gigs.length > 0 && extracted.confidenceScore >= confidenceThreshold) {
-            const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
-            const summaries = gigs.map((gig, i) => {
-              return `${i + 1}. Title: ${gig.title}\n- Gig Id: ${gig._id}\n- Category: ${gig.category}\n- Description: ${gig.description ? gig.description.replace(/(<([^>]+)>)/gi, '') : 'N/A'}\n- Short Summary: ${gig.shortDesc || 'N/A'}\n- Delivery Time: ${gig.deliveryTime} days\n- Revisions: ${gig.revisionNumber}\n- Features: ${gig.features?.join(', ') || 'N/A'}\n- Price: $${gig.price}\n- Checkout URL: ${frontendUrl}/pay/${gig._id}`;
-            }).join('\n\n');
+  try {
+    const extracted = await extractConversationIntent(formattedMessages);
+    const confidenceThreshold = 50;
 
-            formattedMessages.push({
-              role: "system",
-              content: `SYSTEM INSTRUCTION: The user has confirmed. Here are the matching gigs from our database. Present these gigs to the user enthusiastically and provide their checkout URLs so they can make a purchase:\n\n${summaries}`
-            });
-          } else if (inRecommendationLoop || extracted.confidenceScore < confidenceThreshold) {
-            formattedMessages.push({
-              role: "system",
-              content: `SYSTEM INSTRUCTION: The user confirmed their request, but we don't have exact matches for their specific requirements. Instead of asking more questions, provide a DIRECT next step. Say something like: "We couldn't find an exact match for your specific requirements. However, our team specializes in custom solutions. Book a consultation with us and we'll connect you with the right person to build exactly what you need." Then provide the booking link: ${bookingLink}`
-            });
-          } else {
-            formattedMessages.push({
-              role: "system",
-              content: `SYSTEM INSTRUCTION: The user has confirmed, but no gigs were found for the query "${safeQuery}". Let the user know we don't have exact matches but provide a direct booking CTA instead of asking more questions. Booking link: ${bookingLink}`
-            });
-          }
-        }
-      } else if (inRecommendationLoop) {
-        // If we're already in a loop and user hasn't confirmed, break the cycle with direct CTA
+    const extractedName = (extracted.name || "").trim();
+    const extractedEmail = (extracted.email || "").trim().toLowerCase();
+    if (extractedName && isValidEmail(extractedEmail)) {
+      result.inquiryId = await upsertLeadInquiry({ extractedName, extractedEmail, gigId });
+    }
+
+    if (!(extracted.isConfirmed && extracted.searchQuery)) {
+      if (inRecommendationLoop) {
         formattedMessages.push({
           role: "system",
-          content: `SYSTEM INSTRUCTION: We've been going in circles trying to find a match. Break the cycle NOW. Respond with: "It sounds like your project needs a custom solution tailored to your specific requirements. Rather than continuing to search through our standard offerings, I'd like to connect you directly with our team. Book a consultation here and we'll ensure you get exactly what you need: ${bookingLink}"`
+          content: `SYSTEM INSTRUCTION: We've been going in circles trying to find a match. Break the cycle NOW. Respond with: "It sounds like your project needs a custom solution tailored to your specific requirements. Rather than continuing to search through our standard offerings, I'd like to connect you directly with our team. Book a consultation here and we'll ensure you get exactly what you need: ${BOOKING_LINK}"`,
         });
       }
-    } catch (err) {
-      console.error("Manual intent extraction error:", err);
+      return result;
     }
-    // }
 
-    // Step 3: Main Chat Completion (No tools)
-    let response = await openai.chat.completions.create({
+    const latestInquiry = await resolveLatestInquiry(result.inquiryId, extractedEmail);
+    const confirmedName = (extracted.name || latestInquiry?.name || "").trim();
+    const confirmedEmail = (extracted.email || latestInquiry?.email || "").trim().toLowerCase();
+    const missingFields = getMissingIdentityFields(confirmedName, confirmedEmail);
+
+    if (missingFields.length > 0) {
+      const missingText = missingFields.length === 2 ? "name and email" : missingFields[0];
+      formattedMessages.push({
+        role: "system",
+        content: `SYSTEM INSTRUCTION: The user is trying to confirm, but ${missingText} is missing. Ask for the missing ${missingText} in one short friendly message and do not confirm or finalize yet.`,
+      });
+      return result;
+    }
+
+    const confirmed = await processConfirmedRequest({
+      formattedMessages,
+      latestInquiry,
+      confirmedName,
+      confirmedEmail,
+      extracted,
+      gigId,
+      inRecommendationLoop,
+      confidenceThreshold,
+    });
+
+    return { ...result, ...confirmed };
+  } catch (err) {
+    console.error("Manual intent extraction error:", err);
+    return result;
+  }
+};
+
+const savePostChatExtractions = async (inquiryId, allUploadedFiles) => {
+  let nextInquiryId = inquiryId;
+  let extractedContent = [];
+
+  if (allUploadedFiles.length === 0) {
+    return { inquiryId: nextInquiryId, extractedContent };
+  }
+
+  try {
+    if (!nextInquiryId) {
+      nextInquiryId = await createFallbackInquiry();
+    }
+
+    extractedContent = await extractMultipleFiles(allUploadedFiles);
+
+    const inquiry = await Inquiry.findById(nextInquiryId);
+    if (inquiry) {
+      inquiry.extractedContent = [...(inquiry.extractedContent || []), ...extractedContent];
+      const fileReferences = allUploadedFiles.map((file) => file.sourceUrl || file.originalname);
+      inquiry.files = [...new Set([...(inquiry.files || []), ...fileReferences])];
+      inquiry.fileUploadChoice = 'yes';
+      await inquiry.save();
+      console.log(`✅ Extracted content from ${allUploadedFiles.length} file(s) and saved to inquiry ${nextInquiryId}`);
+    }
+  } catch (extractError) {
+    console.error("Error extracting file content in chat handler:", extractError);
+    extractedContent = [{
+      fileName: "extraction-error.txt",
+      fileType: "error",
+      extractedText: "",
+      summary: `Failed to extract files: ${extractError.message}`,
+      keyDetails: [],
+      error: true,
+    }];
+  }
+
+  return { inquiryId: nextInquiryId, extractedContent };
+};
+
+const buildChatResponseObject = async ({
+  responseMessage,
+  isConfirmed,
+  extractedData,
+  matchedGigs,
+  extractedContent,
+  inquiryId,
+}) => {
+  const responseObject = {
+    role: responseMessage.role,
+    content: responseMessage.content,
+    isConfirmed,
+  };
+
+  if (isConfirmed && Object.keys(extractedData).length > 0) {
+    responseObject.extractedData = {
+      name: extractedData.name,
+      email: extractedData.email,
+      budget: extractedData.budget,
+      projectDetails: extractedData.projectDetails,
+      searchQuery: extractedData.searchQuery,
+    };
+  }
+
+  if (matchedGigs.length > 0) {
+    responseObject.gigs = matchedGigs.map((gig) => ({
+      _id: gig._id,
+      title: gig.title,
+      category: gig.category,
+      description: gig.description,
+      shortDesc: gig.shortDesc,
+      price: gig.price,
+      deliveryTime: gig.deliveryTime,
+      revisionNumber: gig.revisionNumber,
+      features: gig.features,
+      userID: gig.userID,
+    }));
+  }
+
+  if (extractedContent.length > 0) {
+    responseObject.extractedContent = extractedContent;
+  }
+
+  if (inquiryId) {
+    responseObject.inquiryId = inquiryId;
+  }
+
+  if (!responseObject.inquiryId) {
+    try {
+      const fallbackInquiry = new Inquiry({
+        name: "Anonymous",
+        email: "anonymous@placeholder.local",
+        projectDetails: INITIAL_PROJECT_DETAILS,
+      });
+      await fallbackInquiry.save();
+      responseObject.inquiryId = fallbackInquiry._id;
+      console.log(`✅ Created fallback inquiry ${fallbackInquiry._id} for file uploads`);
+    } catch (e) {
+      console.error('Failed to create fallback inquiry for file uploads:', e);
+    }
+  }
+
+  return responseObject;
+};
+
+const parseIncomingMessages = (messages) => {
+  if (typeof messages !== 'string') return { messages, error: null };
+  try {
+    return { messages: JSON.parse(messages), error: null };
+  } catch {
+    return { messages: null, error: "Invalid messages format" };
+  }
+};
+
+const loadRemoteFiles = async (fileUrls, fileNames) => {
+  if (!Array.isArray(fileUrls) || fileUrls.length === 0) return [];
+  try {
+    return await buildRemoteFilesFromUrls(fileUrls, Array.isArray(fileNames) ? fileNames : []);
+  } catch (remoteFetchError) {
+    console.error('Error fetching remote files from Cloudinary:', remoteFetchError);
+    return [];
+  }
+};
+
+const appendPreviousExtraction = async (inquiryId, formattedMessages) => {
+  if (!inquiryId) return;
+  try {
+    const existingInquiry = await Inquiry.findById(inquiryId);
+    if (existingInquiry?.extractedContent?.length > 0) {
+      formattedMessages.push({
+        role: 'user',
+        content: `Previously extracted content for this inquiry:\n\n${formatFileSummaries(existingInquiry.extractedContent)}`,
+      });
+    }
+  } catch (e) {
+    console.error('Failed to load existing inquiry extracted content:', e);
+  }
+};
+
+const stripGigPayload = (messages) =>
+  messages.map((m) => {
+    const rest = { ...m };
+    delete rest.gigs;
+    return rest;
+  });
+
+const chatHandler = async (req, res) => {
+  try {
+    const { messages: rawMessages, gigId, fileUrls, fileNames, inquiryId: incomingInquiryId } = req.body;
+
+    const parsed = parseIncomingMessages(rawMessages);
+    if (parsed.error) {
+      return res.status(400).send(parsed.error);
+    }
+    if (!Array.isArray(parsed.messages)) {
+      return res.status(400).send("Messages array is required");
+    }
+
+    let inquiryId = incomingInquiryId || null;
+    const remoteFiles = await loadRemoteFiles(fileUrls, fileNames);
+    const formattedMessages = [buildSystemPrompt(), ...stripGigPayload(parsed.messages)];
+    const allUploadedFiles = [...(req.files || []), ...remoteFiles];
+
+    await appendPreviousExtraction(inquiryId, formattedMessages);
+
+    if (allUploadedFiles.length > 0) {
+      formattedMessages.push({
+        role: 'system',
+        content: 'The user has attached one or more files. Use extracted file content to identify project requirements and relate the results to Gigsta services. If a file does not contain any project requirements or requirements-related content, do not describe the file and instead respond with: "Sorry, I can’t process this image because it is not related to the project or our services."',
+      });
+    }
+
+    const inRecommendationLoop = detectRecommendationLoop(formattedMessages);
+
+    if (allUploadedFiles.length > 0) {
+      const fileResult = await processUploadedFiles({
+        allUploadedFiles,
+        formattedMessages,
+        inquiryId,
+      });
+      inquiryId = fileResult.inquiryId;
+      if (fileResult.earlyResponse) {
+        return res.status(200).json(fileResult.earlyResponse);
+      }
+    }
+
+    const confirmation = await handleConfirmationFlow({
+      formattedMessages,
+      inquiryId,
+      gigId,
+      inRecommendationLoop,
+    });
+
+    const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: formattedMessages,
     });
 
-    let responseMessage = response.choices[0].message;
+    const saved = await savePostChatExtractions(confirmation.inquiryId, allUploadedFiles);
 
-    // if (attachedGigs.length > 0) {
-    //   responseMessage.gigs = attachedGigs;
-    // }
-
-    // Step 4: Process uploaded files if any (extract content and store)
-    let extractedContent = [];
-    if (allUploadedFiles.length > 0) {
-      try {
-        // Ensure we have an inquiryId for storing extracted content
-        if (!inquiryId) {
-          const fallbackInquiry = new Inquiry({
-            name: null,
-            email: null,
-            projectDetails: INITIAL_PROJECT_DETAILS,
-          });
-          await fallbackInquiry.save();
-          inquiryId = fallbackInquiry._id;
-        }
-
-        // Extract content from uploaded files
-        extractedContent = await extractMultipleFiles(allUploadedFiles);
-
-        // Save extracted content and file metadata to the inquiry
-        const inquiry = await Inquiry.findById(inquiryId);
-        if (inquiry) {
-          inquiry.extractedContent = [...(inquiry.extractedContent || []), ...extractedContent];
-          const fileReferences = allUploadedFiles.map((file) => file.sourceUrl || file.originalname);
-          inquiry.files = [...new Set([...(inquiry.files || []), ...fileReferences])];
-          inquiry.fileUploadChoice = 'yes';
-          await inquiry.save();
-          console.log(`✅ Extracted content from ${allUploadedFiles.length} file(s) and saved to inquiry ${inquiryId}`);
-        }
-      } catch (extractError) {
-        console.error("Error extracting file content in chat handler:", extractError);
-        extractedContent = [{
-          fileName: "extraction-error.txt",
-          fileType: "error",
-          extractedText: "",
-          summary: `Failed to extract files: ${extractError.message}`,
-          keyDetails: [],
-          error: true
-        }];
-      }
-    }
-
-    const responseObject = {
-      role: responseMessage.role,
-      content: responseMessage.content,
-      isConfirmed: isConfirmed
-    };
-
-    // Add extracted data if confirmed
-    if (isConfirmed && Object.keys(extractedData).length > 0) {
-      responseObject.extractedData = {
-        name: extractedData.name,
-        email: extractedData.email,
-        budget: extractedData.budget,
-        projectDetails: extractedData.projectDetails,
-        searchQuery: extractedData.searchQuery
-      };
-    }
-
-    // Add matched gigs if any
-    if (matchedGigs.length > 0) {
-      responseObject.gigs = matchedGigs.map(gig => ({
-        _id: gig._id,
-        title: gig.title,
-        category: gig.category,
-        description: gig.description,
-        shortDesc: gig.shortDesc,
-        price: gig.price,
-        deliveryTime: gig.deliveryTime,
-        revisionNumber: gig.revisionNumber,
-        features: gig.features,
-        userID: gig.userID
-      }));
-    }
-
-    // Add extracted content from files if any
-    if (extractedContent.length > 0) {
-      responseObject.extractedContent = extractedContent;
-    }
-
-    if (inquiryId) {
-      responseObject.inquiryId = inquiryId;
-    }
-
-    // If no inquiry was created by the extraction flow, create a minimal inquiry
-    // so the frontend can immediately attach files and trigger extraction.
-    if (!responseObject.inquiryId) {
-      try {
-        const fallbackInquiry = new Inquiry({
-          name: "Anonymous",
-          email: "anonymous@placeholder.local",
-          projectDetails: INITIAL_PROJECT_DETAILS,
-        });
-        await fallbackInquiry.save();
-        responseObject.inquiryId = fallbackInquiry._id;
-        console.log(`✅ Created fallback inquiry ${fallbackInquiry._id} for file uploads`);
-      } catch (e) {
-        console.error('Failed to create fallback inquiry for file uploads:', e);
-      }
-    }
+    const responseObject = await buildChatResponseObject({
+      responseMessage: response.choices[0].message,
+      isConfirmed: confirmation.isConfirmed,
+      extractedData: confirmation.extractedData,
+      matchedGigs: confirmation.matchedGigs,
+      extractedContent: saved.extractedContent,
+      inquiryId: saved.inquiryId,
+    });
 
     return res.status(200).json(responseObject);
   } catch (error) {
@@ -679,7 +866,7 @@ For all inquiries, refer to the *Information Collection Guides* and ask relevant
   }
 };
 
-const uploadInquiryFiles = async (req, res, next) => {
+const uploadInquiryFiles = async (req, res) => {
   try {
     const { inquiryId, fileUrls } = req.body;
 
@@ -687,7 +874,7 @@ const uploadInquiryFiles = async (req, res, next) => {
       return res.status(400).send("inquiryId is required");
     }
 
-    if (!fileUrls || !Array.isArray(fileUrls)) {
+    if (!Array.isArray(fileUrls)) {
       return res.status(400).send("fileUrls array is required");
     }
 
@@ -697,7 +884,6 @@ const uploadInquiryFiles = async (req, res, next) => {
       return res.status(404).send("Inquiry not found for this visitor ID.");
     }
 
-    // Update files field
     inquiry.files = [...(inquiry.files || []), ...fileUrls];
     await inquiry.save();
 
@@ -712,7 +898,46 @@ const uploadInquiryFiles = async (req, res, next) => {
   }
 };
 
-const finalizeInquiry = async (req, res, next) => {
+const sendFinalizeWebhook = async (inquiry) => {
+  const webhookUrl = process.env.WEBHOOK_URL;
+  if (!webhookUrl) {
+    console.warn("⚠️ WEBHOOK_URL not configured in environment");
+    return;
+  }
+
+  try {
+    const webhookPayload = {
+      name: inquiry.name,
+      email: inquiry.email,
+      budget: inquiry.budget,
+      projectDetails: inquiry.projectDetails,
+      fileUploadChoice: inquiry.fileUploadChoice,
+      fileUrls: inquiry.files || [],
+      inquiryId: inquiry._id,
+      createdAt: inquiry.createdAt,
+      timestamp: new Date().toISOString(),
+    };
+
+    console.log("📤 Sending webhook to:", webhookUrl);
+    console.log("📋 Webhook payload:", JSON.stringify(webhookPayload, null, 2));
+
+    const webhookResponse = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(webhookPayload),
+    });
+
+    if (webhookResponse.ok) {
+      console.log("✅ Webhook sent successfully");
+    } else {
+      console.warn(`⚠️ Webhook returned status ${webhookResponse.status}`);
+    }
+  } catch (webhookError) {
+    console.error("❌ Webhook call failed:", webhookError);
+  }
+};
+
+const finalizeInquiry = async (req, res) => {
   try {
     const { inquiryId, userChoice } = req.body;
 
@@ -730,51 +955,12 @@ const finalizeInquiry = async (req, res, next) => {
       return res.status(404).json({ success: false, message: "Inquiry not found for this visitor ID." });
     }
 
-    // Mark whether user chose to upload files
     inquiry.fileUploadChoice = userChoice.toLowerCase();
     inquiry.webhookSent = true;
     await inquiry.save();
 
-    // Call webhook with all collected data
-    const webhookUrl = process.env.WEBHOOK_URL;
-    if (webhookUrl) {
-      try {
-        const webhookPayload = {
-          name: inquiry.name,
-          email: inquiry.email,
-          budget: inquiry.budget,
-          projectDetails: inquiry.projectDetails,
-          fileUploadChoice: inquiry.fileUploadChoice,
-          fileUrls: inquiry.files || [],
-          inquiryId: inquiry._id,
-          createdAt: inquiry.createdAt,
-          timestamp: new Date().toISOString()
-        };
+    await sendFinalizeWebhook(inquiry);
 
-        console.log("📤 Sending webhook to:", webhookUrl);
-        console.log("📋 Webhook payload:", JSON.stringify(webhookPayload, null, 2));
-
-        const webhookResponse = await fetch(webhookUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(webhookPayload)
-        });
-
-        if (webhookResponse.ok) {
-          console.log("✅ Webhook sent successfully");
-        } else {
-          console.warn(`⚠️ Webhook returned status ${webhookResponse.status}`);
-        }
-      } catch (webhookError) {
-        console.error("❌ Webhook call failed:", webhookError);
-        // Don't fail the request if webhook fails, just log it
-      }
-    } else {
-      console.warn("⚠️ WEBHOOK_URL not configured in environment");
-    }
-
-    const bookingLink = 'https://calendar.google.com/calendar/appointments/schedules/AcZssZ33yLOCv7DUeruVilUgjx9ybRByluRS8gt05MZbosEqFT6KmQ5AEd62y02rx7Bjs_ViZw86wNaa';
-    
     return res.status(200).json({
       success: true,
       message: "Inquiry finalized successfully",
@@ -782,17 +968,17 @@ const finalizeInquiry = async (req, res, next) => {
       messages: [
         {
           role: "assistant",
-          content: "Thank you for your response! 🎉"
+          content: "Thank you for your response! 🎉",
         },
         {
           role: "assistant",
-          content: `Please proceed to checkout, or if you'd like to discuss your project with a team member first, feel free to [book a session here](${bookingLink}).`
+          content: `Please proceed to checkout, or if you'd like to discuss your project with a team member first, feel free to [book a session here](${BOOKING_LINK}).`,
         },
         {
           role: "assistant",
-          content: "This conversation has ended. To begin a new request, please start a new chat."
-        }
-      ]
+          content: "This conversation has ended. To begin a new request, please start a new chat.",
+        },
+      ],
     });
   } catch (error) {
     console.error("Error in finalizeInquiry:", error);

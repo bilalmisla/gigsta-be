@@ -1,15 +1,20 @@
 const { User, Review, Order, Message, Conversation, Gig, OrderStatus, Coupon } = require('../models');
 const { CustomException } = require('../utils');
-const { generateRegistrationVerificationEmailHtml } = require('../utils/emailTemplates');
 const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
 const bcrypt = require('bcrypt');
+const crypto = require('node:crypto');
 const saltRounds = 10;
 const { OAuth2Client } = require("google-auth-library");
 const { default: axios } = require('axios');
 
+const companyName = 'Gigsta AI';
+const year = new Date().getFullYear();
+
 const transporter = nodemailer.createTransport({
-    service: 'Gmail',
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true,
     auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS
@@ -662,7 +667,7 @@ const generateUniqueUsername = async (fullname) => {
     let attempts = 0;
     do {
         // Fresh random 3-digit number on every attempt
-        const randomNum = Math.floor(100 + Math.random() * 900);
+        const randomNum = crypto.randomInt(100, 1000);
         username = `${base}${randomNum}`;
         const existing = await User.findOne({ username });
         if (!existing) break;
@@ -713,7 +718,7 @@ const authRegister = async (request, response) => {
             message: 'A verification email has been sent to your registered address.'
         });
     } catch (err) {
-        if (err.message.includes('E11000')) {
+        if (err.message?.includes('E11000')) {
             return response.status(400).send({
                 error: true,
                 message: err.message || 'Choose a unique username!'
@@ -914,7 +919,7 @@ const handleDefaultAdminLogin = async (username, password, res) => {
     }
 
     // Check if user's role is admin
-    if (!user.role || user.role.toLowerCase() !== "admin") {
+    if (user.role?.toLowerCase() !== "admin") {
         return res.status(403).send({ error: true, message: 'Access denied. Admins only.' });
     }
 
@@ -967,7 +972,7 @@ const authResetPassword = async (request, response) => {
             message: 'A password reset email has been sent to your registered address.'
         });
     } catch (err) {
-        if (err.message.includes('E11000')) {
+        if (err.message?.includes('E11000')) {
             return response.status(400).send({
                 error: true,
                 message: 'Choose a unique email!'
@@ -1036,7 +1041,7 @@ const authStatus = async (request, response) => {
         })
     }
     catch (error) {
-        return response.status(error.status).send({
+        return response.status(error?.status || 500).send({
             error: true,
             message: error.message
         })
@@ -1066,7 +1071,7 @@ const authUpdatePassword = async (request, response) => {
             throw CustomException('Your current password is not valid!', 404);
         }
     } catch (error) {
-        return response.status(error.status).send({
+        return response.status(error?.status || 500).send({
             error: true,
             message: error.message
         })
@@ -1111,7 +1116,7 @@ const authUpdateProfile = async (request, response) => {
             user: { ...updatedUser._doc, token: request.token }
         });
     } catch (error) {
-        return response.status(error.status).send({
+        return response.status(error?.status || 500).send({
             error: true,
             message: error.message
         })
@@ -1204,51 +1209,6 @@ const authDeleteAccount = async (request, response) => {
     }
 };
 
-// const FACEBOOK_APP_ID = "455920190822400";
-// const FACEBOOK_APP_SECRET = "b08b39fedd93fe891009b21f7b4b0854";
-// const REDIRECT_URI = "http://localhost:8080/api/auth/facebook/callback";
-
-// const signInWithFacebook = async (req, res) => {
-//     try {
-//         const { code } = req.query;
-
-//         // 1️⃣ Exchange 'code' for an access token
-//         const tokenResponse = await axios.get(
-//             `https://graph.facebook.com/v18.0/oauth/access_token`,
-//             {
-//                 params: {
-//                     client_id: FACEBOOK_APP_ID,
-//                     client_secret: FACEBOOK_APP_SECRET,
-//                     redirect_uri: REDIRECT_URI,
-//                     code,
-//                 },
-//             }
-//         );
-
-//         const accessToken = tokenResponse.data.access_token;
-
-//         // 2️⃣ Fetch user details
-//         const userResponse = await axios.get(
-//             `https://graph.facebook.com/me?fields=id,name,email&access_token=${accessToken}`
-//         );
-
-//         const { id, name, email } = userResponse.data;
-
-//         // 3️⃣ Check if user exists, else save in MongoDB
-//         let user = await User.findOne({ facebookId: id });
-
-//         if (!user) {
-//             user = new User({ facebookId: id, name, email });
-//             await user.save();
-//         }
-
-//         // 4️⃣ Redirect user to frontend with success message
-//         res.redirect(`${process.env.FRONTEND_URL}/dashboard?userId=${user._id}`);
-//     } catch (error) {
-//         console.error("Facebook OAuth Error:", error.response?.data || error);
-//         res.status(500).json({ error: "Authentication failed" });
-//     }
-// }
 const signInWithFacebook = async (req, res) => {
     const { accessToken, userID } = req.body;
 
@@ -1274,7 +1234,7 @@ const restoreRelatedRecords = async (userId) => {
         await Gig.updateMany({ userID: userId, deletedAt: { $ne: null } }, { deletedAt: null })
         .setOptions({ bypassDeletedCheck: true }) // This prevents the pre-find middleware from running
         .select('+deletedAt')
-        .exec();;
+        .exec();
 
         // Restore Conversations
         await Conversation.updateMany(
@@ -1333,7 +1293,7 @@ const handleFetchProfile = async (req, res) => {
 
         return res.status(200).json({ success: true, user: { ...user._doc, ordersCompleted: ordersCount }, gigs });
     } catch (error) {
-        return res.status(error.statusCode || 500).json({ success: false, message: error.message });
+        return res.status(error?.statusCode || 500).json({ success: false, message: error.message });
     }
 }
 
@@ -1371,8 +1331,8 @@ const handleFetchEarnings = async (req, res) => {
             if (!order) return;
 
             const gigItem = order.gigs.find(g =>
-                g.gigID.toString() === status.gigID.toString() &&
-                g.sellerID.toString() === user._id.toString()
+                g.gigID?.toString() === status.gigID?.toString() &&
+                g.sellerID?.toString() === user._id.toString()
             );
             if (!gigItem) return;
             const amount = gigItem.total || gigItem.price || 0;
@@ -1386,7 +1346,7 @@ const handleFetchEarnings = async (req, res) => {
         // Return the response in the requested format
         return res.send({ totalEarnings });
     } catch (error) {
-        return res.status(error.statusCode || 500).json({ success: false, message: error.message });
+        return res.status(error?.statusCode || 500).json({ success: false, message: error.message });
     }
 }
 

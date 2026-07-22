@@ -1,82 +1,101 @@
 const { OpenAI } = require("openai");
-const path = require("path");
+const path = require("node:path");
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+const IMAGE_EXTENSIONS = new Set(["jpg", "jpeg", "png"]);
+const TEXT_EXTENSIONS = new Set(["txt"]);
+const DOCUMENT_EXTENSIONS = new Set(["pdf", "doc", "docx"]);
+
+const MEDIA_TYPES = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  pdf: "application/pdf",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  doc: "application/msword",
+};
+
+const createEmptyExtractedData = (fileName, fileExtension) => ({
+  fileName,
+  fileType: fileExtension,
+  extractedText: "",
+  summary: "",
+  keyDetails: [],
+});
+
 /**
- * Extract content from uploaded files using OpenAI Vision API
- * Supports: PDF, DOCX, DOC, TXT, JPG, JPEG, PNG
+ * Parse the first JSON object embedded in free-form AI text without regex backtracking.
  */
-const extractFileContent = async (file) => {
+const parseJsonFromText = (text) => {
+  if (!text || typeof text !== "string") return null;
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start === -1 || end <= start) return null;
   try {
-    const fileExtension = path.extname(file.originalname).toLowerCase().slice(1);
-    const fileType = file.mimetype;
-    let extractedData = {
-      fileName: file.originalname,
-      fileType: fileExtension,
-      extractedText: "",
-      summary: "",
-      keyDetails: [],
-    };
+    return JSON.parse(text.slice(start, end + 1));
+  } catch {
+    return null;
+  }
+};
 
-    // For images: Use Vision API
-    if (["jpg", "jpeg", "png"].includes(fileExtension)) {
-      const base64Data = file.buffer.toString("base64");
-      const mediaType =
-        fileExtension === "png" ? "image/png" : "image/jpeg";
+const applyParsedExtraction = (extractedData, parsed, fallbackText) => {
+  if (parsed) {
+    extractedData.extractedText = parsed.extractedText || fallbackText;
+    extractedData.summary = parsed.summary || "";
+    extractedData.keyDetails = parsed.keyDetails || [];
+  } else {
+    extractedData.extractedText = fallbackText;
+  }
+};
 
-      const response = await openai.chat.completions.create({
-        model: "gpt-4o",
-        messages: [
+const extractFromImage = async (file, fileExtension, extractedData) => {
+  const base64Data = file.buffer.toString("base64");
+  const mediaType = MEDIA_TYPES[fileExtension] || "image/jpeg";
+
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o",
+    messages: [
+      {
+        role: "user",
+        content: [
           {
-            role: "user",
-            content: [
-              {
-                type: "image_url",
-                image_url: {
-                  url: `data:${mediaType};base64,${base64Data}`,
-                },
-              },
-              {
-                type: "text",
-                text: `Please analyze this image and extract all relevant information. 
+            type: "image_url",
+            image_url: {
+              url: `data:${mediaType};base64,${base64Data}`,
+            },
+          },
+          {
+            type: "text",
+            text: `Please analyze this image and extract all relevant information. 
                 Provide:
                 1. A complete text description of what you see
                 2. A brief summary (2-3 sentences)
                 3. Key details or information extracted (as bullet points)
                 
                 Format your response as JSON with keys: extractedText, summary, keyDetails (array)`,
-              },
-            ],
           },
         ],
-        max_tokens: 1024,
-      });
+      },
+    ],
+    max_tokens: 1024,
+  });
 
-      const content = response.choices[0].message.content;
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
+  const content = response.choices[0].message.content;
+  applyParsedExtraction(extractedData, parseJsonFromText(content), content);
+};
 
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        extractedData.extractedText = parsed.extractedText || content;
-        extractedData.summary = parsed.summary || "";
-        extractedData.keyDetails = parsed.keyDetails || [];
-      } else {
-        extractedData.extractedText = content;
-      }
-    }
-    // For text files
-    else if (["txt"].includes(fileExtension)) {
-      const textContent = file.buffer.toString("utf-8");
+const extractFromTextFile = async (file, extractedData) => {
+  const textContent = file.buffer.toString("utf-8");
 
-      const response = await openai.chat.completions.create({
-        model: "gpt-4o",
-        messages: [
-          {
-            role: "user",
-            content: `Please analyze the following text and extract key information.
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o",
+    messages: [
+      {
+        role: "user",
+        content: `Please analyze the following text and extract key information.
             
 Text content:
 ${textContent}
@@ -87,64 +106,69 @@ Provide:
 3. Key details or important points (as bullet points)
 
 Format your response as JSON with keys: extractedText, summary, keyDetails (array)`,
-          },
-        ],
-        max_tokens: 2048,
-      });
+      },
+    ],
+    max_tokens: 2048,
+  });
 
-      const content = response.choices[0].message.content;
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
+  const content = response.choices[0].message.content;
+  applyParsedExtraction(
+    extractedData,
+    parseJsonFromText(content),
+    textContent
+  );
+};
 
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        extractedData.extractedText = parsed.extractedText || textContent;
-        extractedData.summary = parsed.summary || "";
-        extractedData.keyDetails = parsed.keyDetails || [];
-      } else {
-        extractedData.extractedText = textContent;
-      }
-    }
-    // For PDF and document files: Convert to base64 and use Vision API
-    else if (["pdf", "doc", "docx"].includes(fileExtension)) {
-      const base64Data = file.buffer.toString("base64");
-      const mediaType =
-        fileExtension === "pdf"
-          ? "application/pdf"
-          : fileExtension === "docx"
-            ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            : "application/msword";
+const extractFromDocument = async (file, fileExtension, extractedData) => {
+  const base64Data = file.buffer.toString("base64");
+  const mediaType = MEDIA_TYPES[fileExtension] || "application/msword";
 
-      const response = await openai.responses.create({
-        model: "gpt-4.1-mini",
-        input: [
+  const response = await openai.responses.create({
+    model: "gpt-4.1-mini",
+    input: [
+      {
+        role: "user",
+        content: [
           {
-            role: "user",
-            content: [
-              {
-                type: "input_file",
-                filename: file.originalname,
-                file_data: `data:${mediaType};base64,${base64Data}`,
-              },
-              {
-                type: "input_text",
-                text: "Extract details from this file and return strict JSON with keys: extractedText (string), summary (string), keyDetails (array of strings).",
-              },
-            ],
+            type: "input_file",
+            filename: file.originalname,
+            file_data: `data:${mediaType};base64,${base64Data}`,
+          },
+          {
+            type: "input_text",
+            text: "Extract details from this file and return strict JSON with keys: extractedText (string), summary (string), keyDetails (array of strings).",
           },
         ],
-      });
+      },
+    ],
+  });
 
-      const responseText = response.output_text || "";
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+  const responseText = response.output_text || "";
+  applyParsedExtraction(
+    extractedData,
+    parseJsonFromText(responseText),
+    responseText
+  );
+};
 
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        extractedData.extractedText = parsed.extractedText || responseText;
-        extractedData.summary = parsed.summary || "";
-        extractedData.keyDetails = parsed.keyDetails || [];
-      } else {
-        extractedData.extractedText = responseText;
-      }
+/**
+ * Extract content from uploaded files using OpenAI Vision API
+ * Supports: PDF, DOCX, DOC, TXT, JPG, JPEG, PNG
+ */
+const extractFileContent = async (file) => {
+  try {
+    const fileExtension = path.extname(file.originalname).toLowerCase().slice(1);
+    const extractedData = createEmptyExtractedData(
+      file.originalname,
+      fileExtension
+    );
+
+    if (IMAGE_EXTENSIONS.has(fileExtension)) {
+      await extractFromImage(file, fileExtension, extractedData);
+    } else if (TEXT_EXTENSIONS.has(fileExtension)) {
+      await extractFromTextFile(file, extractedData);
+    } else if (DOCUMENT_EXTENSIONS.has(fileExtension)) {
+      await extractFromDocument(file, fileExtension, extractedData);
     }
 
     return extractedData;
@@ -154,21 +178,6 @@ Format your response as JSON with keys: extractedText, summary, keyDetails (arra
       `Failed to extract content from ${file.originalname}: ${error.message}`
     );
   }
-};
-
-// Enhance extracted data with logo-specific details when possible
-const enhanceWithLogoDetails = async (extractedData) => {
-  try {
-    const textForAnalysis = extractedData.extractedText || extractedData.summary || "";
-    if (!textForAnalysis || textForAnalysis.length < 20) return extractedData;
-    const logoInfo = await extractLogoDetails(textForAnalysis);
-    if (logoInfo) {
-      extractedData.logoDetails = logoInfo;
-    }
-  } catch (e) {
-    console.error("Error enhancing with logo details:", e);
-  }
-  return extractedData;
 };
 
 /**
@@ -183,21 +192,33 @@ Return strict JSON with keys: businessName (string or empty), tagline (string or
       model: "gpt-4o",
       messages: [
         { role: "system", content: prompt },
-        { role: "user", content: `Text to analyze:\n\n${text}` }
+        { role: "user", content: `Text to analyze:\n\n${text}` },
       ],
       temperature: 0,
     });
 
     const content = response.choices[0].message.content || "";
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
-    }
-    return null;
+    return parseJsonFromText(content);
   } catch (err) {
     console.error("Logo extraction error:", err);
     return null;
   }
+};
+
+// Enhance extracted data with logo-specific details when possible
+const enhanceWithLogoDetails = async (extractedData) => {
+  try {
+    const textForAnalysis =
+      extractedData.extractedText || extractedData.summary || "";
+    if (!textForAnalysis || textForAnalysis.length < 20) return extractedData;
+    const logoInfo = await extractLogoDetails(textForAnalysis);
+    if (logoInfo) {
+      extractedData.logoDetails = logoInfo;
+    }
+  } catch (e) {
+    console.error("Error enhancing with logo details:", e);
+  }
+  return extractedData;
 };
 
 /**

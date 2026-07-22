@@ -3,9 +3,13 @@ const { CustomException } = require('../utils');
 const { sendBuyerOrderConfirmationEmail, sendSellerOrderNotificationEmail, sendSellerWithdrawalNotificationEmail, sendSellerWithdrawalStatusUpdateEmail, sendExtendDeliveryRequestEmail, sendExtendDeliveryApprovalEmail, sendExtendDeliveryRejectionEmail } = require('../utils/emailTemplates');
 const stripe = require('stripe')(process.env.STRIPE_SECRET);
 const nodemailer = require('nodemailer');
+const crypto = require('node:crypto');
 const { sendOrderStatusEmail } = require('../utils/sendOrderStatusEmail');
 const { createNotification } = require('./notification.controller');
 const { emitToUser } = require('../server-realtime');
+
+const toDisplayText = (value, fallback = '') =>
+    (typeof value === 'string' || typeof value === 'number') ? String(value) : fallback;
 
 // const getOrders = async (request, response) => {
 //     try {
@@ -307,12 +311,12 @@ const paymentIntent = async (request, response) => {
         if (request.body.couponCode) {
             const coupon = await Coupon.findOne({ code: request.body.couponCode.trim().toUpperCase() });
             if (coupon && coupon.isActive && new Date(coupon.expiryDate) >= new Date()) {
-                discountAmount = parseFloat(((subtotal * coupon.discountPercent) / 100).toFixed(2));
+                discountAmount = Number.parseFloat(((subtotal * coupon.discountPercent) / 100).toFixed(2));
                 subtotal -= discountAmount;
             }
         }
 
-        const taxAmount = parseFloat((subtotal * TAX_RATE).toFixed(2));
+        const taxAmount = Number.parseFloat((subtotal * TAX_RATE).toFixed(2));
         const totalWithTax = subtotal + taxAmount;
 
         if (totalWithTax === 0) {
@@ -411,12 +415,12 @@ const createPayment = async (request, response) => {
         if (request.body.couponCode) {
             const coupon = await Coupon.findOne({ code: request.body.couponCode.trim().toUpperCase() });
             if (coupon && coupon.isActive && new Date(coupon.expiryDate) >= new Date()) {
-                discountAmount = parseFloat(((subtotal * coupon.discountPercent) / 100).toFixed(2));
+                discountAmount = Number.parseFloat(((subtotal * coupon.discountPercent) / 100).toFixed(2));
                 subtotal -= discountAmount;
             }
         }
 
-        const taxAmount = parseFloat((subtotal * TAX_RATE).toFixed(2));
+        const taxAmount = Number.parseFloat((subtotal * TAX_RATE).toFixed(2));
         const totalWithTax = subtotal + taxAmount;
 
         if (totalWithTax === 0) {
@@ -460,7 +464,9 @@ const createPayment = async (request, response) => {
 };
 
 const transporter = nodemailer.createTransport({
-    service: 'Gmail',
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true,
     auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS
@@ -473,7 +479,7 @@ const createOrders = async (request, response) => {
     try {
         let order_payment_intent = null;
         if (paymentIntent || totalAmount === 0) {
-            order_payment_intent = paymentIntent ? paymentIntent.id : "FREE_" + Math.random().toString(36).substring(7);
+            order_payment_intent = paymentIntent ? paymentIntent.id : "FREE_" + crypto.randomUUID();
             const order = new Order({
                 buyerID: request.userID,
                 gigs: orderItems,
@@ -481,7 +487,7 @@ const createOrders = async (request, response) => {
                 couponCode,
                 discountAmount,
                 payment_intent: order_payment_intent,
-                isCompleted: totalAmount === 0 ? true : false
+                isCompleted: totalAmount === 0
             });
 
             await order.save();
@@ -628,7 +634,7 @@ const updateOrderStatus = async (req, res) => {
             const receiverId = req.userID.toString() === buyerID.toString() ? sellerID : buyerID;
             const receiver = await User.findById(receiverId);
             const title = `Order status: ${status}`;
-            const body = `${user?.username || 'User'} updated status to "${status}" for ${gigFound.title}`;
+            const body = `${user?.username || 'User'} updated status to "${status}" for ${toDisplayText(gigFound.title)}`;
             console.log(receiver, title, "title");
             const notif = await createNotification({
                 userId: receiverId,
@@ -723,7 +729,7 @@ const getWithdrawals = async (req, res) => {
 const adminGetWithdrawals = async (req, res) => {
     try {
         const user = await User.findById(req.userID);
-        if (!user || user.role !== "admin") {
+        if (user?.role !== "admin") {
             return res.status(403).send({
                 error: true,
                 message: "Only admin can view all withdrawals."
@@ -801,7 +807,7 @@ const getAdminDashboardCounts = async (req, res) => {
     try {
         // Ensure only admin can access
         const requester = await User.findById(req.userID);
-        if (!requester || requester.role !== 'admin') {
+        if (requester?.role !== 'admin') {
             return res.status(403).send({ error: true, message: 'Forbidden: admin role required.' });
         }
 
@@ -889,7 +895,7 @@ const updateWithdrawalStatus = async (req, res) => {
                 });
 
                 // Send email notification to seller about withdrawal completion
-                if (withdrawal.sellerID && withdrawal.sellerID.email) {
+                if (withdrawal.sellerID?.email) {
                     await sendSellerWithdrawalStatusUpdateEmail(
                         withdrawal.sellerID.email,
                         withdrawal.sellerID.fullname || withdrawal.sellerID.username || 'Seller',
@@ -999,11 +1005,11 @@ const getEarningStats = async (request, response) => {
             const order = orderMap[status.orderID?.toString()];
             if (!order) return;
 
-            const gigItem = order.gigs.find(g =>
+            const hasGig = order.gigs.some(g =>
                 g.gigID.toString() === status.gigID.toString() &&
                 g.sellerID.toString() === user._id.toString()
             );
-            if (!gigItem) return;
+            if (!hasGig) return;
 
             const amount = order.totalAmount || 0;
             const statusEntry = {
@@ -1075,7 +1081,7 @@ const updateOrderDetails = async (req, res) => {
         // --- CASE 2: Buyer updates deliveryDate ---
         if (isBuyer && deliveryDate) {
             const parsed = new Date(deliveryDate);
-            if (isNaN(parsed.getTime())) {
+            if (Number.isNaN(parsed.getTime())) {
                 return res.status(400).send({ error: true, message: 'Invalid deliveryDate. Expect ISO date string.' });
             }
 
@@ -1183,7 +1189,7 @@ const requestExtendDelivery = async (req, res) => {
 
         // Calculate new delivery date
         const newDeliveryDate = new Date(currentDeliveryDate);
-        newDeliveryDate.setDate(newDeliveryDate.getDate() + parseInt(days));
+        newDeliveryDate.setDate(newDeliveryDate.getDate() + Number.parseInt(days, 10));
 
         // Create extend delivery request data
         const extendRequest = {
@@ -1191,7 +1197,7 @@ const requestExtendDelivery = async (req, res) => {
             gigId,
             sellerId,
             buyerId: order.buyerID._id,
-            days: parseInt(days),
+            days: Number.parseInt(days, 10),
             currentDeliveryDate: new Date(currentDeliveryDate),
             newDeliveryDate,
             status: 'pending',
@@ -1220,7 +1226,7 @@ const requestExtendDelivery = async (req, res) => {
             actorId: sellerId,
             type: 'order.extend_delivery_request',
             title: 'Delivery Extension Request',
-            body: `${seller.username} requested to extend delivery by ${days} day${days > 1 ? 's' : ''} for "${gig.title}"`,
+            body: `${seller.username} requested to extend delivery by ${days} day${days > 1 ? 's' : ''} for "${toDisplayText(gig?.title)}"`,
             metadata: { 
                 orderId, 
                 gigId, 
@@ -1290,7 +1296,7 @@ const approveExtendDelivery = async (req, res) => {
             'extendRequest.status': 'pending'
         }).sort({ createdAt: -1 });
 
-        if (!orderStatus || !orderStatus.extendRequest) {
+        if (!orderStatus?.extendRequest) {
             return res.status(404).send({ 
                 error: true, 
                 message: 'No pending extend delivery request found.' 
@@ -1337,7 +1343,7 @@ const approveExtendDelivery = async (req, res) => {
             actorId: buyerId,
             type: 'order.extend_delivery_approved',
             title: 'Delivery Extension Approved',
-            body: `${buyer.username} approved your delivery extension request for "${gig.title}"`,
+            body: `${buyer.username} approved your delivery extension request for "${toDisplayText(gig?.title)}"`,
             metadata: { 
                 orderId, 
                 gigId, 
@@ -1406,7 +1412,7 @@ const rejectExtendDelivery = async (req, res) => {
             'extendRequest.status': 'pending'
         }).sort({ createdAt: -1 });
 
-        if (!orderStatus || !orderStatus.extendRequest) {
+        if (!orderStatus?.extendRequest) {
             return res.status(404).send({ 
                 error: true, 
                 message: 'No pending extend delivery request found.' 
@@ -1447,7 +1453,7 @@ const rejectExtendDelivery = async (req, res) => {
             actorId: buyerId,
             type: 'order.extend_delivery_rejected',
             title: 'Delivery Extension Rejected',
-            body: `${buyer.username} rejected your delivery extension request for "${gig.title}"`,
+            body: `${buyer.username} rejected your delivery extension request for "${toDisplayText(gig?.title)}"`,
             metadata: { 
                 orderId, 
                 gigId, 

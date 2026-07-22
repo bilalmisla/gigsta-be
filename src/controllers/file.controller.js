@@ -19,7 +19,6 @@ const validateFilesController = async (req, res) => {
     }
 
     const results = [];
-    const allValid = true;
 
     for (const file of req.files) {
       const validation = validateFile(file);
