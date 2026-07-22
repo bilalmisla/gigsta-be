@@ -5,7 +5,7 @@ const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const connect = require('./configs/db');
 const PORT = 8080;
-const http = require('http');
+const http = require('node:http');
 const { initSocket } = require('./server-realtime');
 
 // Other Route files
