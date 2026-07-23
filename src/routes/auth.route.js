@@ -1,4 +1,5 @@
 const express = require('express');
+const jwt = require('jsonwebtoken');
 const { 
     authLogin, authLogout, authRegister, authStatus, 
     verifyEmail, authResetPassword, authConfirmPassword, 
@@ -63,7 +64,7 @@ app.get('/only-earnings-stats/:username', handleFetchEarnings);
 
 // Middleware to verify token
 const authenticateToken = async (req, res, next) => {
-    const token = req.headers['Authorization']?.split(' ')[1];
+    const token = req.headers.authorization?.split(' ')[1];
 
     if (!token) return res.status(401).json({ error: 'Token is required' });
 
@@ -74,9 +75,9 @@ const authenticateToken = async (req, res, next) => {
         if (!user) return res.status(401).json({ error: 'Invalid token' });
 
         req.user = user;
-        next();
-    } catch (err) {
-        res.status(403).json({ error: 'Invalid or expired token' });
+        return next();
+    } catch {
+        return res.status(403).json({ error: 'Invalid or expired token' });
     }
 };
 

@@ -2,10 +2,12 @@ const { StudentInvite, User } = require('../models');
 const { CustomException } = require('../utils');
 const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
-const crypto = require('crypto');
+const crypto = require('node:crypto');
 
 const transporter = nodemailer.createTransport({
-    service: 'Gmail',
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true,
     auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS
@@ -80,7 +82,7 @@ const sendInvitesToStudents = async (request, response) => {
         }
 
         // Validate email format
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/u;
         const invalidEmails = emails.filter(email => !emailRegex.test(email));
         if (invalidEmails.length > 0) {
             throw CustomException(`Invalid email format: ${invalidEmails.join(', ')}`, 400);
@@ -267,7 +269,6 @@ const acceptInviteAndRegister = async (request, response) => {
         invite.studentId = savedStudent._id;
         await invite.save();
         
-        // const authToken = jwt.sign({ userId: savedStudent._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
         const authToken = jwt.sign({ _id: savedStudent._id, isSeller: savedStudent.isSeller }, process.env.JWT_SECRET, { expiresIn: '7d' });
 
         // Remove password from response
@@ -286,14 +287,6 @@ const acceptInviteAndRegister = async (request, response) => {
         return response.cookie('accessToken', authToken, cookieConfig)
             .status(202)
             .send({ error: false, message: 'Student account created successfully!', user: { ...studentResponse, token: authToken } });
-        // return response.status(201).send({
-        //     error: false,
-        //     message: 'Student account created successfully.',
-        //     data: {
-        //         user: studentResponse,
-        //         token: authToken
-        //     }
-        // });
 
     } catch (error) {
         return response.status(error.status || 500).send({

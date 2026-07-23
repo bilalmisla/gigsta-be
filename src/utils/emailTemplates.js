@@ -1,3 +1,35 @@
+const companyName = 'Gigsta AI';
+const year = new Date().getFullYear();
+
+const getEmailFooterHtml = () => `
+    <div style="
+        padding:20px;
+        background:#fafafa;
+        border-top:1px solid #ececec;
+        text-align:center;
+        font-size:13px;
+        color:#9CA3AF;
+    ">
+
+        <div style="margin-bottom:12px;">
+            <a href="https://gigsta.ai/privacy-policy"
+               style="color:#6B7280;text-decoration:none;margin:0 12px;">
+                Privacy Policy
+            </a>
+
+            |
+
+            <a href="https://gigsta.ai/contact-us"
+               style="color:#6B7280;text-decoration:none;margin:0 12px;">
+                Contact Support
+            </a>
+        </div>
+
+        © ${year} ${companyName}. All rights reserved.
+
+    </div>
+`;
+
 // 1️⃣ Send email to Buyer after order is placed
 const sendBuyerOrderConfirmationEmail = async (
   email,
@@ -6,7 +38,6 @@ const sendBuyerOrderConfirmationEmail = async (
   sellerName,
   orderId,
   amount,
-  deliveryTime,
   transporter
 ) => {
   const orderLink = `${process.env.FRONTEND_URL}/orders`;
@@ -132,32 +163,7 @@ const sendBuyerOrderConfirmationEmail = async (
 
     </div>
 
-    <div style="
-        padding:20px;
-        background:#fafafa;
-        border-top:1px solid #ececec;
-        text-align:center;
-        font-size:13px;
-        color:#9CA3AF;
-    ">
-
-        <div style="margin-bottom:12px;">
-            <a href="https://gigsta.ai/privacy-policy"
-               style="color:#6B7280;text-decoration:none;margin:0 12px;">
-                Privacy Policy
-            </a>
-
-            |
-
-            <a href="https://gigsta.ai/contact-us"
-               style="color:#6B7280;text-decoration:none;margin:0 12px;">
-                Contact Support
-            </a>
-        </div>
-
-        © ${year} ${companyName}. All rights reserved.
-
-    </div>
+    ${getEmailFooterHtml()}
 
 </div>
         `
@@ -174,7 +180,6 @@ const sendSellerOrderNotificationEmail = async (
   buyerName,
   orderId,
   amount,
-  deliveryTime,
   transporter
 ) => {
   const orderLink = `${process.env.FRONTEND_URL}/orders`;
@@ -300,32 +305,7 @@ const sendSellerOrderNotificationEmail = async (
 
     </div>
 
-   <div style="
-        padding:20px;
-        background:#fafafa;
-        border-top:1px solid #ececec;
-        text-align:center;
-        font-size:13px;
-        color:#9CA3AF;
-    ">
-
-        <div style="margin-bottom:12px;">
-            <a href="https://gigsta.ai/privacy-policy"
-               style="color:#6B7280;text-decoration:none;margin:0 12px;">
-                Privacy Policy
-            </a>
-
-            |
-
-            <a href="https://gigsta.ai/contact-us"
-               style="color:#6B7280;text-decoration:none;margin:0 12px;">
-                Contact Support
-            </a>
-        </div>
-
-        © ${year} ${companyName}. All rights reserved.
-
-    </div>
+   ${getEmailFooterHtml()}
 
 </div>
         `
@@ -460,32 +440,7 @@ const sendSellerWithdrawalNotificationEmail = async (
 
     </div>
 
-    <div style="
-        padding:20px;
-        background:#fafafa;
-        border-top:1px solid #ececec;
-        text-align:center;
-        font-size:13px;
-        color:#9CA3AF;
-    ">
-
-        <div style="margin-bottom:12px;">
-            <a href="https://gigsta.ai/privacy-policy"
-               style="color:#6B7280;text-decoration:none;margin:0 12px;">
-                Privacy Policy
-            </a>
-
-            |
-
-            <a href="https://gigsta.ai/contact-us"
-               style="color:#6B7280;text-decoration:none;margin:0 12px;">
-                Contact Support
-            </a>
-        </div>
-
-        © ${year} ${companyName}. All rights reserved.
-
-    </div>
+    ${getEmailFooterHtml()}
 
 </div>
         `
@@ -619,32 +574,7 @@ const sendSellerWithdrawalStatusUpdateEmail = async (
 
     </div>
 
-  <div style="
-        padding:20px;
-        background:#fafafa;
-        border-top:1px solid #ececec;
-        text-align:center;
-        font-size:13px;
-        color:#9CA3AF;
-    ">
-
-        <div style="margin-bottom:12px;">
-            <a href="https://gigsta.ai/privacy-policy"
-               style="color:#6B7280;text-decoration:none;margin:0 12px;">
-                Privacy Policy
-            </a>
-
-            |
-
-            <a href="https://gigsta.ai/contact-us"
-               style="color:#6B7280;text-decoration:none;margin:0 12px;">
-                Contact Support
-            </a>
-        </div>
-
-        © ${year} ${companyName}. All rights reserved.
-
-    </div>
+  ${getEmailFooterHtml()}
 
 </div>
         `
@@ -784,32 +714,7 @@ const sendAdminWithdrawalNotificationEmail = async (
             <strong>Gigsta System</strong>
         </p>
     </div>
-   <div style="
-        padding:20px;
-        background:#fafafa;
-        border-top:1px solid #ececec;
-        text-align:center;
-        font-size:13px;
-        color:#9CA3AF;
-    ">
-
-        <div style="margin-bottom:12px;">
-            <a href="https://gigsta.ai/privacy-policy"
-               style="color:#6B7280;text-decoration:none;margin:0 12px;">
-                Privacy Policy
-            </a>
-
-            |
-
-            <a href="https://gigsta.ai/contact-us"
-               style="color:#6B7280;text-decoration:none;margin:0 12px;">
-                Contact Support
-            </a>
-        </div>
-
-        © ${year} ${companyName}. All rights reserved.
-
-    </div>
+   ${getEmailFooterHtml()}
 </div>
     `
   };
@@ -826,8 +731,7 @@ function generateEmailTemplate(data) {
     timestamp,
     messageContent,
     replyUrl,
-    companyName,
-    year
+    companyName: brandName = companyName,
   } = data;
 
   return `
@@ -846,7 +750,7 @@ function generateEmailTemplate(data) {
     <!-- Header -->
     <div style="padding:35px 20px;text-align:center;background:#fafafa;border-bottom:1px solid #ececec;">
         <img src="${logoUrl}"
-             alt="${companyName}"
+             alt="${brandName}"
              style="width:70px;height:70px;margin-bottom:10px;" />
 
         <h2 style="margin:0;color:#111827;font-size:26px;">
@@ -863,7 +767,7 @@ function generateEmailTemplate(data) {
 
         <p style="margin-top:0;">
             You have received a new message on
-            <strong>${companyName}</strong>.
+            <strong>${brandName}</strong>.
         </p>
 
         <!-- Message Card -->
@@ -947,32 +851,7 @@ function generateEmailTemplate(data) {
     </div>
 
     <!-- Footer -->
-    <div style="
-        padding:20px;
-        background:#fafafa;
-        border-top:1px solid #ececec;
-        text-align:center;
-        font-size:13px;
-        color:#9CA3AF;
-    ">
-
-        <div style="margin-bottom:12px;">
-            <a href="https://gigsta.ai/privacy-policy"
-               style="color:#6B7280;text-decoration:none;margin:0 12px;">
-                Privacy Policy
-            </a>
-
-            |
-
-            <a href="https://gigsta.ai/contact-us"
-               style="color:#6B7280;text-decoration:none;margin:0 12px;">
-                Contact Support
-            </a>
-        </div>
-
-        © ${year} ${companyName}. All rights reserved.
-
-    </div>
+    ${getEmailFooterHtml()}
 
 </div>
 
@@ -982,17 +861,19 @@ function generateEmailTemplate(data) {
 }
 
 // 5️⃣ Send email to Buyer when seller requests delivery extension
-const sendExtendDeliveryRequestEmail = async (
+const sendExtendDeliveryRequestEmail = async ({
   email,
   buyerName,
   sellerName,
   gigTitle,
-  orderId, gigId, conversationID,
+  orderId,
+  gigId,
+  conversationID,
   days,
   currentDeliveryDate,
   newDeliveryDate,
   transporter
-) => {
+}) => {
   const orderLink = `${process.env.FRONTEND_URL}/buyer/orders/${orderId}/${conversationID}/${gigId}`;
 
   const mailOptions = {
@@ -1130,32 +1011,7 @@ const sendExtendDeliveryRequestEmail = async (
 
     </div>
 
-   <div style="
-        padding:20px;
-        background:#fafafa;
-        border-top:1px solid #ececec;
-        text-align:center;
-        font-size:13px;
-        color:#9CA3AF;
-    ">
-
-        <div style="margin-bottom:12px;">
-            <a href="https://gigsta.ai/privacy-policy"
-               style="color:#6B7280;text-decoration:none;margin:0 12px;">
-                Privacy Policy
-            </a>
-
-            |
-
-            <a href="https://gigsta.ai/contact-us"
-               style="color:#6B7280;text-decoration:none;margin:0 12px;">
-                Contact Support
-            </a>
-        </div>
-
-        © ${year} ${companyName}. All rights reserved.
-
-    </div>
+   ${getEmailFooterHtml()}
 
 </div>
     `
@@ -1165,16 +1021,18 @@ const sendExtendDeliveryRequestEmail = async (
 };
 
 // 6️⃣ Send email to Seller when buyer approves delivery extension
-const sendExtendDeliveryApprovalEmail = async (
+const sendExtendDeliveryApprovalEmail = async ({
   email,
   sellerName,
   buyerName,
   gigTitle,
-  orderId, gigId, conversationID,
+  orderId,
+  gigId,
+  conversationID,
   days,
   newDeliveryDate,
   transporter
-) => {
+}) => {
   const orderLink = `${process.env.FRONTEND_URL}/seller/orders/${orderId}/${conversationID}/${gigId}`;
 
   const mailOptions = {
@@ -1301,32 +1159,7 @@ const sendExtendDeliveryApprovalEmail = async (
 
     </div>
 
-   <div style="
-        padding:20px;
-        background:#fafafa;
-        border-top:1px solid #ececec;
-        text-align:center;
-        font-size:13px;
-        color:#9CA3AF;
-    ">
-
-        <div style="margin-bottom:12px;">
-            <a href="https://gigsta.ai/privacy-policy"
-               style="color:#6B7280;text-decoration:none;margin:0 12px;">
-                Privacy Policy
-            </a>
-
-            |
-
-            <a href="https://gigsta.ai/contact-us"
-               style="color:#6B7280;text-decoration:none;margin:0 12px;">
-                Contact Support
-            </a>
-        </div>
-
-        © ${year} ${companyName}. All rights reserved.
-
-    </div>
+   ${getEmailFooterHtml()}
 </div>
     `
   };
@@ -1335,17 +1168,18 @@ const sendExtendDeliveryApprovalEmail = async (
 };
 
 // 7️⃣ Send email to Seller when buyer rejects delivery extension
-const sendExtendDeliveryRejectionEmail = async (
+const sendExtendDeliveryRejectionEmail = async ({
   email,
   sellerName,
   buyerName,
   gigTitle,
   orderId,
-  gigId, conversationID,
+  gigId,
+  conversationID,
   days,
   currentDeliveryDate,
   transporter
-) => {
+}) => {
   const orderLink = `${process.env.FRONTEND_URL}/seller/orders/${orderId}/${conversationID}/${gigId}`;
 
   const mailOptions = {
@@ -1471,32 +1305,7 @@ const sendExtendDeliveryRejectionEmail = async (
         </p>
 
     </div>
-    <div style="
-        padding:20px;
-        background:#fafafa;
-        border-top:1px solid #ececec;
-        text-align:center;
-        font-size:13px;
-        color:#9CA3AF;
-    ">
-
-        <div style="margin-bottom:12px;">
-            <a href="https://gigsta.ai/privacy-policy"
-               style="color:#6B7280;text-decoration:none;margin:0 12px;">
-                Privacy Policy
-            </a>
-
-            |
-
-            <a href="https://gigsta.ai/contact-us"
-               style="color:#6B7280;text-decoration:none;margin:0 12px;">
-                Contact Support
-            </a>
-        </div>
-
-        © ${year} ${companyName}. All rights reserved.
-
-    </div>
+    ${getEmailFooterHtml()}
 
    
 </div>

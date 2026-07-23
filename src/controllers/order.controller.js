@@ -11,37 +11,6 @@ const { emitToUser } = require('../server-realtime');
 const toDisplayText = (value, fallback = '') =>
     (typeof value === 'string' || typeof value === 'number') ? String(value) : fallback;
 
-// const getOrders = async (request, response) => {
-//     try {
-//         const orders = await Order.find({
-//             $or: [
-//                 { buyerID: request.userID },
-//                 { gigs: { $elemMatch: { sellerID: request.userID } } }
-//             ]
-//         })
-//         .populate('buyerID', 'username email image country')
-//         .populate('gigs.sellerID', 'username email image country');
-
-//         const updatedOrders = orders.map((item, index) => {
-//             if (item._doc.buyerID._id.toString() === request.userID) {
-//                 return item;
-//             }
-//             return {
-//                 ...item._doc,
-//                 gigs: item._doc.gigs.filter((gig, index) => gig._doc.sellerID._id.toString() === request.userID)
-//             };
-//         });
-
-//         return response.send(updatedOrders);
-//     }
-//     catch ({ message, status = 500 }) {
-//         return response.send({
-//             error: true,
-//             message
-//         })
-//     }
-// }
-
 const getOrders = async (request, response) => {
     try {
         const orders = await Order.find({
@@ -151,27 +120,12 @@ const getOrderDetailsById = async (request, response) => {
         }).sort({ createdAt: -1 });
 
         // Add status to each gig
-        const enrichGigsWithStatus = (gig) => {
-            // const status = orderStatuses.find(status =>
-            //     status.gigID?.toString() === gig._id.toString()
-            // );
-            // if (status) {
-            //     return {
-            //         ...gig.toObject(),
-            //         orderStatusDetails: status,
-            //         status: status.status
-            //     }
-            // } else {
-            return {
-                ...gig.toObject(),
-            };
-            // }
-        }
+        const enrichGigsWithStatus = (gig) => ({
+            ...gig.toObject(),
+        });
 
         // Filter out gigs not belonging to this seller (if not buyer)
         if (!isBuyer) {
-            // const sellerGigs = order.gigs.filter(gig => gig.sellerID._id.toString() === userId);
-            // console.log(sellerGigs, "sellerGigs");
             const filteredOrder = {
                 ...order._doc,
                 gig: enrichGigsWithStatus(gig),
@@ -197,102 +151,6 @@ const getOrderDetailsById = async (request, response) => {
         });
     }
 };
-
-// const paymentIntent = async (request, response) => {
-//     const { _id } = request.params;
-
-//     try {
-//         const gig = await Gig.findOne({ _id });
-
-//         const payment_intent = await stripe.paymentIntents.create({
-//             amount: gig.price * 100,
-//             currency: "USD",
-//             automatic_payment_methods: {
-//                 enabled: true,
-//             },
-//         });
-
-//         // await order.save();
-//         return response.send({
-//             error: false,
-//             orderItems: [{
-//                 gigID: gig._id,
-//                 image: gig.cover,
-//                 title: gig.title,
-//                 buyerID: request.userID,
-//                 sellerID: gig.userID,
-//                 price: gig.price,
-//                 quantity: 1,
-//                 total: gig.price
-//             }],
-//             totalAmount: gig.price,
-//             paymentId: payment_intent.id,
-//             clientSecret: payment_intent.client_secret
-//         })
-
-//     }
-//     catch ({ message, status = 500 }) {
-//         return response.send({
-//             error: true,
-//             message
-//         })
-//     }
-// }
-
-// const createPayment = async (request, response) => {
-//     const { cart } = request.body; // Array of gigs with quantity
-
-//     try {
-//         if (!cart.length) {
-//             throw CustomException("Cart is empty!", 400);
-//         }
-
-//         let totalAmount = 0;
-//         let orderItems = [];
-
-//         for (const item of cart) {
-//             const gig = await Gig.findById(item._id);
-//             if (!gig) {
-//                 throw CustomException(`Gig with ID ${item.gigID} not found`, 404);
-//             }
-
-//             let itemTotal = gig.price * item.quantity;
-//             totalAmount += itemTotal;
-
-//             orderItems.push({
-//                 gigID: gig._id,
-//                 image: gig.cover,
-//                 title: gig.title,
-//                 buyerID: request.userID,
-//                 sellerID: gig.userID,
-//                 price: gig.price,
-//                 quantity: item.quantity,
-//                 total: itemTotal
-//             });
-//         }
-
-//         // Create a Stripe Payment Intent
-//         const paymentIntent = await stripe.paymentIntents.create({
-//             amount: totalAmount * 100, // Convert to cents
-//             currency: "USD",
-//             automatic_payment_methods: { enabled: true },
-//         });
-
-//         return response.send({
-//             error: false,
-//             orderItems,
-//             totalAmount,
-//             paymentId: paymentIntent.id,
-//             clientSecret: paymentIntent.client_secret
-//         });
-
-//     } catch ({ message, status = 500 }) {
-//         return response.status(status).send({
-//             error: true,
-//             message
-//         });
-//     }
-// };
 
 const TAX_RATE = 0.045; // 4.5%
 
@@ -495,7 +353,6 @@ const createOrders = async (request, response) => {
             // Fetch buyer info
             const buyer = await User.findById(request.userID);
             const sellerName = await User.findById(orderItems[0].sellerID);
-            // const buyer = request.user; // assuming you set request.user from auth middleware
             const buyerName = buyer.username;
             const buyerEmail = buyer.email;
 
@@ -504,17 +361,15 @@ const createOrders = async (request, response) => {
                 buyerEmail,
                 buyerName,
                 orderItems.length > 1 ? 'Multiple Gigs' : orderItems[0].title,
-                orderItems.length > 1 ? 'Multiple Sellers' : sellerName.username, // fallback if needed
+                orderItems.length > 1 ? 'Multiple Sellers' : sellerName.username,
                 order._id,
                 totalAmount,
-                orderItems.length > 1 ? 'Varies by gig' : `${orderItems[0].deliveryTime || 'N/A'}`,
                 transporter
             );
 
             // Send email to each Seller
             for (const gig of orderItems) {
-                console.log(gig, "gig details");
-                const seller = await User.findById(gig.sellerID); // assuming a User model exists
+                const seller = await User.findById(gig.sellerID);
                 if (seller) {
                     await sendSellerOrderNotificationEmail(
                         seller.email,
@@ -523,7 +378,6 @@ const createOrders = async (request, response) => {
                         buyerName,
                         order._id,
                         gig.total,
-                        gig.deliveryTime || 'N/A',
                         transporter
                     );
                 }
@@ -635,7 +489,6 @@ const updateOrderStatus = async (req, res) => {
             const receiver = await User.findById(receiverId);
             const title = `Order status: ${status}`;
             const body = `${user?.username || 'User'} updated status to "${status}" for ${toDisplayText(gigFound.title)}`;
-            console.log(receiver, title, "title");
             const notif = await createNotification({
                 userId: receiverId,
                 actorId: req.userID,
@@ -664,9 +517,8 @@ const updateOrderStatus = async (req, res) => {
                 orderID
             );
 
-        } catch (e) {
-            console.error('Error creating notification:', e);
-            // Continue execution even if notification fails
+        } catch (error) {
+            console.error('Error creating notification:', error);
         }
 
         return res.send({
@@ -954,39 +806,6 @@ const getEarningStats = async (request, response) => {
             }
         });
 
-        // // 3. For each, get the corresponding order and gig info for price
-        // let availableFunds = 0;
-        // let futurePayments = 0;
-        // let totalEarnings = 0;
-
-        // // We'll need to fetch all relevant orders in one go for efficiency
-        // const orderIDs = Array.from(new Set(Object.values(latestStatusMap).map(s => s.orderID)));
-        // const orders = await Order.find({ _id: { $in: orderIDs } });
-        // const orderMap = {};
-        // orders.forEach(order => { orderMap[order._id.toString()] = order; });
-
-        // Object.values(latestStatusMap).forEach(status => {
-        //     const order = orderMap[status.orderID?.toString()];
-        //     if (!order) return;
-        //     // Find the gig in the order's gigs array
-        //     const gigItem = order.gigs.find(g => g.gigID.toString() === status.gigID.toString() && g.sellerID.toString() === user._id.toString());
-        //     if (!gigItem) return;
-        //     const amount = gigItem.total || gigItem.price || 0;
-
-        //     if (status.status === 'Completed' && !status.withdrawn) {
-        //         availableFunds += amount;
-        //         totalEarnings += amount;
-        //     } else if (status.status !== "Canceled" && status.status !== "Completed") {
-        //         futurePayments += amount;
-        //     }
-        // });
-
-        // return response.send({
-        //     availableFunds,
-        //     futurePayments,
-        //     totalEarnings
-        // });
-        
         let availableFunds = 0;
         let futurePayments = 0;
         let totalEarnings = 0;
@@ -1246,11 +1065,11 @@ const requestExtendDelivery = async (req, res) => {
         });
 
         // Send email to buyer
-        await sendExtendDeliveryRequestEmail(
-            order.buyerID.email,
-            order.buyerID.username,
-            seller.username,
-            gig.title,
+        await sendExtendDeliveryRequestEmail({
+            email: order.buyerID.email,
+            buyerName: order.buyerID.username,
+            sellerName: seller.username,
+            gigTitle: gig.title,
             orderId,
             gigId,
             conversationID,
@@ -1258,7 +1077,7 @@ const requestExtendDelivery = async (req, res) => {
             currentDeliveryDate,
             newDeliveryDate,
             transporter
-        );
+        });
 
         return res.send({ 
             error: false, 
@@ -1363,18 +1182,18 @@ const approveExtendDelivery = async (req, res) => {
         });
 
         // Send email to seller
-        await sendExtendDeliveryApprovalEmail(
-            seller.email,
-            seller.username,
-            buyer.username,
-            gig.title,
+        await sendExtendDeliveryApprovalEmail({
+            email: seller.email,
+            sellerName: seller.username,
+            buyerName: buyer.username,
+            gigTitle: gig.title,
             orderId,
             gigId,
             conversationID,
-            extendRequest.days,
+            days: extendRequest.days,
             newDeliveryDate,
             transporter
-        );
+        });
 
         return res.send({ 
             error: false, 
@@ -1473,16 +1292,18 @@ const rejectExtendDelivery = async (req, res) => {
         });
 
         // Send email to seller
-        await sendExtendDeliveryRejectionEmail(
-            seller.email,
-            seller.username,
-            buyer.username,
-            gig.title,
-            orderId, gigId, conversationID,
-            extendRequest.days,
-            extendRequest.currentDeliveryDate,
+        await sendExtendDeliveryRejectionEmail({
+            email: seller.email,
+            sellerName: seller.username,
+            buyerName: buyer.username,
+            gigTitle: gig.title,
+            orderId,
+            gigId,
+            conversationID,
+            days: extendRequest.days,
+            currentDeliveryDate: extendRequest.currentDeliveryDate,
             transporter
-        );
+        });
 
         return res.send({ 
             error: false, 

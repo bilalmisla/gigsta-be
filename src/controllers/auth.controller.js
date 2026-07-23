@@ -37,7 +37,7 @@ const sendVerificationEmail = async (email, username, token, fullname) => {
 </div>
 <!-- Body -->
 <div style="padding: 40px 35px; color: #374151; line-height: 1.7; font-size: 16px;">
-<p style="margin-top: 0;">Hi <strong>${fullname}</strong>,</p>
+<p style="margin-top: 0;">Hi <strong>${displayName}</strong>,</p>
 <p>Thank you for signing up for <a style="color: #8b5cf6; text-decoration: none; font-weight: bold;" href="${process.env.FRONTEND_URL}" target="_blank" rel="noopener"> Gigsta.ai </a>.</p>
 <p>Your username for login is:</p>
 <div style="background: #f4f4f5; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; text-align: center; margin: 25px 0;"><span style="font-size: 18px; font-weight: bold; color: #111827;"> ${username} </span></div>
@@ -678,7 +678,7 @@ const generateUniqueUsername = async (fullname) => {
 };
 
 const authRegister = async (request, response) => {
-    const { email, phone, password, image, isSeller, description, fullname } = request.body;
+    const { email, password, image, isSeller, description, fullname } = request.body;
 
     try {
         const hash = await bcrypt.hash(password, saltRounds);
@@ -701,7 +701,6 @@ const authRegister = async (request, response) => {
             description,
             isSeller,
             fullname,
-            // phone,
             isVerified: false // Add an isVerified field in your User model
         });
 
@@ -776,7 +775,7 @@ const verifyEmail = async (request, response) => {
             error: false,
             message: 'Your account has been successfully verified.'
         });
-    } catch (err) {
+    } catch {
         return response.status(400).send({
             error: true,
             message: 'Invalid or expired token.'
@@ -865,7 +864,6 @@ const handleSocialLogin = async (credential, isSeller, res) => {
 
             await sendConfirmAccountCreatedEmail(user.email, user.username, couponCode);
 
-            console.log("Created new user:", user);
             return sendSuccessResponse(user, res);
         }
 
@@ -879,11 +877,9 @@ const handleSocialLogin = async (credential, isSeller, res) => {
         });
         await user.save();
 
-        console.log("Updated existing user:", user);
         return sendSuccessResponse(user, res);
     } catch (error) {
         console.error("Error in handleSocialLogin:", error);
-        // return sendErrorResponse(res, 500, "Internal server error");
         return res.status(500).send({
             error: true,
             message: error.message || "Internal server error"
@@ -1008,7 +1004,7 @@ const authConfirmPassword = async (request, response) => {
             error: false,
             message: 'Your password has been successfully changed.'
         });
-    } catch (err) {
+    } catch {
         return response.status(400).send({
             error: true,
             message: 'Invalid or expired token.'
@@ -1142,9 +1138,8 @@ const authUpdateEmail = async (request, response) => {
         return response.status(200).send({
             error: false,
             message: 'Your email has been successfully updated.',
-            // user: { ...updatedUser._doc },
         });
-    } catch (err) {
+    } catch {
         return response.status(400).send({
             error: true,
             message: 'Invalid or expired token.'
@@ -1220,11 +1215,10 @@ const signInWithFacebook = async (req, res) => {
             throw new Error("Email permission not granted by user.");
         }
 
-        console.log("Facebook User:", response.data);
-        res.status(200).json({ success: true, user: response.data });
+        return res.status(200).json({ success: true, user: response.data });
     } catch (error) {
         console.error("Facebook Auth Error:", error);
-        res.status(401).json({ success: false, message: error.message || "Invalid Facebook Token" });
+        return res.status(401).json({ success: false, message: error.message || "Invalid Facebook Token" });
     }
 }
 
@@ -1264,11 +1258,9 @@ const restoreRelatedRecords = async (userId) => {
         .setOptions({ bypassDeletedCheck: true }) // This prevents the pre-find middleware from running
         .select('+deletedAt')
         .exec();
-
-        console.log("Restored all related records for user:", userId);
     } catch (error) {
         console.error("Error restoring related records:", error);
-        throw error; // Propagate the error to handle it in the main function
+        throw error;
     }
 };
 
