@@ -6,6 +6,9 @@ const MONGO_URI = process.env.MONGODB_URI || process.env.MONGO_URI;
 
 async function createTestCoupon() {
     try {
+        if (!MONGO_URI) {
+            throw new Error('Missing MONGODB_URI (or MONGO_URI) environment variable');
+        }
         await mongoose.connect(MONGO_URI);
         console.log('Connected to DB');
         

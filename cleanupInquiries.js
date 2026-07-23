@@ -7,6 +7,9 @@ const isDryRun = process.argv.includes('--dry-run');
 
 async function cleanupLegacyInquiryFields() {
   try {
+    if (!MONGO_URI) {
+      throw new Error('Missing MONGODB_URI (or MONGO_URI) environment variable');
+    }
     await mongoose.connect(MONGO_URI);
     console.log('Connected to database');
 
