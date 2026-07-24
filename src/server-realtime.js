@@ -19,7 +19,7 @@ function initSocket(server) {
             socket.user = { id: decoded._id };
             return next();
         } catch (e) {
-            return next(new Error('Invalid token'));
+            return next(new Error('Invalid token', { cause: e }));
         }
     });
 

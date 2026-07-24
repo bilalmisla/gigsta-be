@@ -6,7 +6,9 @@ const nodemailer = require('nodemailer');
 const { sendAdminWithdrawalNotificationEmail } = require('../utils/emailTemplates');
 
 const transporter = nodemailer.createTransport({
-    service: 'Gmail',
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true,
     auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS
@@ -203,7 +205,7 @@ const withdrawSellerFunds = async (req, res) => {
         }
 
         const { amount } = req.body;
-        if (!amount || isNaN(amount) || amount <= 0) {
+        if (!amount || Number.isNaN(amount) || amount <= 0) {
             return res.status(400).send({ error: true, message: 'Valid amount is required for withdrawal.' });
         }
 

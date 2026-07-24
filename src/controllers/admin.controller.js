@@ -4,7 +4,7 @@ const getDashboardCounts = async (req, res) => {
     try {
         // Ensure only admin can access
         const requester = await User.findById(req.userID);
-        if (!requester || requester.role !== 'admin') {
+        if (requester?.role !== 'admin') {
             return res.status(403).send({ error: true, message: 'Forbidden: admin role required.' });
         }
 

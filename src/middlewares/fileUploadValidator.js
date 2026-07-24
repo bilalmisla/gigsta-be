@@ -63,10 +63,10 @@ const validateFile = (file) => {
     return { isValid: false, error: 'File type is not allowed for security reasons' };
   }
 
-  // Check file size (max 10MB)
-  const maxSize = 10 * 1024 * 1024; // 10MB
+  // Check file size (max 5MB)
+  const maxSize = 5 * 1024 * 1024; // 5MB
   if (file.size > maxSize) {
-    return { isValid: false, error: 'File size exceeds 10MB limit' };
+    return { isValid: false, error: 'File size exceeds 5MB limit' };
   }
 
   return { isValid: true };

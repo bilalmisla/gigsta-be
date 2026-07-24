@@ -4,7 +4,7 @@ const { authLogout } = require('../controllers/auth.controller');
 
 const userMiddleware = (request, response, next) => {
     const authHeader = request.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    if (!authHeader?.startsWith('Bearer ')) {
         throw CustomException('Token missing or invalid!', 401);
     }
 

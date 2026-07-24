@@ -82,7 +82,7 @@ const sendInvitesToStudents = async (request, response) => {
         }
 
         // Validate email format
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/u;
+        const emailRegex = /^[^\s@]+@(?:[^\s@.]+\.)+[^\s@.]{2,}$/u;
         const invalidEmails = emails.filter(email => !emailRegex.test(email));
         if (invalidEmails.length > 0) {
             throw CustomException(`Invalid email format: ${invalidEmails.join(', ')}`, 400);
