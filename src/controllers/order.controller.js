@@ -168,7 +168,7 @@ const paymentIntent = async (request, response) => {
 
         if (request.body.couponCode) {
             const coupon = await Coupon.findOne({ code: request.body.couponCode.trim().toUpperCase() });
-            if (coupon && coupon.isActive && new Date(coupon.expiryDate) >= new Date()) {
+            if (coupon?.isActive && new Date(coupon?.expiryDate) >= new Date()) {
                 discountAmount = Number.parseFloat(((subtotal * coupon.discountPercent) / 100).toFixed(2));
                 subtotal -= discountAmount;
             }
@@ -272,7 +272,7 @@ const createPayment = async (request, response) => {
         let discountAmount = 0;
         if (request.body.couponCode) {
             const coupon = await Coupon.findOne({ code: request.body.couponCode.trim().toUpperCase() });
-            if (coupon && coupon.isActive && new Date(coupon.expiryDate) >= new Date()) {
+            if (coupon?.isActive && new Date(coupon?.expiryDate) >= new Date()) {
                 discountAmount = Number.parseFloat(((subtotal * coupon.discountPercent) / 100).toFixed(2));
                 subtotal -= discountAmount;
             }
@@ -539,8 +539,14 @@ const updatePaymentStatus = async (request, response) => {
     const { payment_intent } = request.body;
 
     try {
+        if (typeof payment_intent !== 'string' || !payment_intent.trim()) {
+            throw CustomException('Invalid payment intent!', 400);
+        }
+
+        const safePaymentIntent = payment_intent.trim().slice(0, 200);
+
         const order = await Order.findOneAndUpdate(
-            { payment_intent },
+            { payment_intent: { $eq: safePaymentIntent } },
             { $set: { isCompleted: true } },
             { new: true }
         );

@@ -5,8 +5,28 @@ const { generateEmailTemplate } = require('../utils/emailTemplates');
 const { createNotification } = require('./notification.controller');
 const { emitToUser } = require('../server-realtime');
 
+const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const toSafeConversationId = (value) => {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return UUID_V4_PATTERN.test(trimmed) ? trimmed : undefined;
+};
+
+const toSafeMessageText = (value) => {
+  if (typeof value !== 'string') return '';
+  return value.slice(0, 5000);
+};
+
+const toSafeFileUrls = (value) => {
+  if (!Array.isArray(value)) return [];
+  return value.filter((url) => typeof url === 'string' && url.trim()).slice(0, 20);
+};
+
 const transporter = nodemailer.createTransport({
-  service: 'Gmail',
+  host: 'smtp.gmail.com',
+  port: 465,
+  secure: true,
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS
@@ -45,39 +65,53 @@ const createMessage = async (request, response) => {
   const { conversationID, description, fileUrls, gigId, orderId } = request.body;
 
   try {
+    const safeConversationId = toSafeConversationId(conversationID);
+    if (!safeConversationId) {
+      return response.status(400).send({
+        error: true,
+        message: 'Invalid conversation ID'
+      });
+    }
+
+    const safeDescription = toSafeMessageText(description);
+    const safeFileUrls = toSafeFileUrls(fileUrls);
+
     const message = new Message({
-      conversationID,
+      conversationID: safeConversationId,
       userID: request.userID,
-      description,
-      files: fileUrls
-    })
+      description: safeDescription,
+      files: safeFileUrls
+    });
 
     await message.save();
-    await Conversation.findOneAndUpdate({ conversationID }, {
-      $set: {
-        readBySeller: request.isSeller,
-        readByBuyer: !request.isSeller,
-        lastMessage: description,
-        deletedByBuyer: false,
-        deletedBySeller: false
-      }
-    }, { new: true });
+    await Conversation.findOneAndUpdate(
+      { conversationID: { $eq: safeConversationId } },
+      {
+        $set: {
+          readBySeller: Boolean(request.isSeller),
+          readByBuyer: !request.isSeller,
+          lastMessage: safeDescription,
+          deletedByBuyer: false,
+          deletedBySeller: false
+        }
+      },
+      { new: true }
+    );
 
-    const conversation = await Conversation.findOne({ conversationID });
+    const conversation = await Conversation.findOne({ conversationID: { $eq: safeConversationId } });
 
     const sender = await User.findOne({ _id: request.isSeller ? conversation.sellerID : conversation.buyerID });
     const receiver = await User.findOne({ _id: request.isSeller ? conversation.buyerID : conversation.sellerID });
 
-    // console.log(sender, receiver, conversation, "sender & receiver");
-    await sendMessageEmail(sender, receiver, conversation, fileUrls);
+    await sendMessageEmail(sender, receiver, conversation, safeFileUrls);
     // Create real-time notification to receiver
     const notif = await createNotification({
       userId: receiver._id,
       actorId: sender._id,
       type: 'chat.message',
       title: `New message from ${sender.username}`,
-      body: description,
-      metadata: { conversationID, gigId, orderId }
+      body: safeDescription,
+      metadata: { conversationID: safeConversationId, gigId, orderId }
     });
     emitToUser(receiver._id.toString(), 'notification:new', {
       id: notif._id,
@@ -100,9 +134,18 @@ const createMessage = async (request, response) => {
 const getMessages = async (request, response) => {
   const { conversationID } = request.params;
   try {
-    const conversation = await Conversation.findOne({ conversationID: conversationID })
+    const safeConversationId = toSafeConversationId(conversationID);
+    if (!safeConversationId) {
+      return response.status(400).send({
+        error: true,
+        message: 'Invalid conversation ID'
+      });
+    }
+
+    const conversation = await Conversation.findOne({ conversationID: { $eq: safeConversationId } })
       .populate('sellerID', 'username fullname image email').populate('buyerID', 'username fullname image email');
-    const messages = await Message.find({ conversationID }).populate('userID', 'username fullname image email');
+    const messages = await Message.find({ conversationID: { $eq: safeConversationId } })
+      .populate('userID', 'username fullname image email');
     return response.send({ data: messages, conversation });
   }
   catch ({ message, status = 500 }) {
@@ -117,7 +160,15 @@ const deleteMessage = async (request, response) => {
   const { messageID } = request.params;
   
   try {
-    const message = await Message.findOne({ conversationID: messageID });
+    const safeConversationId = toSafeConversationId(messageID);
+    if (!safeConversationId) {
+      return response.status(400).send({
+        error: true,
+        message: 'Invalid conversation ID'
+      });
+    }
+
+    const message = await Message.findOne({ conversationID: { $eq: safeConversationId } });
     
     if (!message) {
       return response.status(404).send({
@@ -127,16 +178,18 @@ const deleteMessage = async (request, response) => {
     }
 
     // Add the user to the deletedBy array
-    const updateField = request.isSeller ? 'deletedBySeller' : 'deletedByBuyer';
+    const softDeleteUpdate = request.isSeller
+      ? { $set: { deletedBySeller: true } }
+      : { $set: { deletedByBuyer: true } };
     await Message.findOneAndUpdate(
-      { conversationID: messageID },
-      { $set: { [updateField]: true } },
+      { conversationID: { $eq: safeConversationId } },
+      softDeleteUpdate,
       { new: true }
     );
 
     // Create notifications for both parties about message deletion
     try {
-      const conversation = await Conversation.findOne({ conversationID: messageID });
+      const conversation = await Conversation.findOne({ conversationID: { $eq: safeConversationId } });
       if (conversation) {
         const actor = await User.findById(request.userID);
         const receiverId = request.isSeller ? conversation.buyerID : conversation.sellerID;
@@ -147,7 +200,7 @@ const deleteMessage = async (request, response) => {
           type: 'message.deleted',
           title: 'Message deleted',
           body: `${actor?.username || 'User'} deleted a message in your conversation`,
-          metadata: { conversationID: messageID }
+          metadata: { conversationID: safeConversationId }
         });
 
         emitToUser(receiverId.toString(), 'notification:new', {
@@ -159,9 +212,8 @@ const deleteMessage = async (request, response) => {
           createdAt: notification.createdAt
         });
       }
-    } catch (e) {
-      console.error('Error creating message deletion notification:', e);
-      // Continue execution even if notification fails
+    } catch (error) {
+      console.error('Error creating message deletion notification:', error);
     }
     
     return response.status(200).send({
@@ -181,7 +233,15 @@ const deleteConversation = async (request, response) => {
   const { conversationID } = request.params;
   
   try {
-    const conversation = await Conversation.findOne({ conversationID });
+    const safeConversationId = toSafeConversationId(conversationID);
+    if (!safeConversationId) {
+      return response.status(400).send({
+        error: true,
+        message: 'Invalid conversation ID'
+      });
+    }
+
+    const conversation = await Conversation.findOne({ conversationID: { $eq: safeConversationId } });
     
     if (!conversation) {
       return response.status(404).send({
@@ -190,11 +250,12 @@ const deleteConversation = async (request, response) => {
       });
     }
     
-    // Add the user to the deletedBy array
-    const updateField = request.isSeller ? 'deletedBySeller' : 'deletedByBuyer';
+    const softDeleteUpdate = request.isSeller
+      ? { $set: { deletedBySeller: true } }
+      : { $set: { deletedByBuyer: true } };
     await Conversation.findOneAndUpdate(
-      { conversationID },
-      { $set: { [updateField]: true } },
+      { conversationID: { $eq: safeConversationId } },
+      softDeleteUpdate,
       { new: true }
     );
 
@@ -209,7 +270,7 @@ const deleteConversation = async (request, response) => {
         type: 'conversation.deleted',
         title: 'Conversation deleted',
         body: `${actor?.username || 'User'} deleted the conversation`,
-        metadata: { conversationID: conversationID }
+        metadata: { conversationID: safeConversationId }
       });
 
       emitToUser(receiverId.toString(), 'notification:new', {
@@ -220,9 +281,8 @@ const deleteConversation = async (request, response) => {
         metadata: notification.metadata,
         createdAt: notification.createdAt
       });
-    } catch (e) {
-      console.error('Error creating conversation deletion notification:', e);
-      // Continue execution even if notification fails
+    } catch (error) {
+      console.error('Error creating conversation deletion notification:', error);
     }
     
     return response.status(200).send({
