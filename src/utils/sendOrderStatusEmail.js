@@ -1,18 +1,8 @@
 // utils/sendOrderStatusEmail.js
 
-const nodemailer = require('nodemailer');
 const { formatTimestamp } = require('../utils');
 const { generateEmailTemplate } = require('../utils/emailTemplates');
-
-const transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 465,
-    secure: true,
-    auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS
-    }
-});
+const { mailTransporter: transporter } = require('./mailTransporter');
 
 const sendOrderStatusEmail = async (sender, receiver, gigTitle, newStatus, orderId) => {
     const emailData = {

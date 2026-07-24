@@ -1,24 +1,32 @@
-const mongoose = require('mongoose');
-const { Order, Gig, User, OrderStatus, Withdrawal, Coupon } = require('../models');
+const { Order, Gig, User, OrderStatus, Withdrawal } = require('../models');
 const { CustomException } = require('../utils');
-const { sendBuyerOrderConfirmationEmail, sendSellerOrderNotificationEmail, sendSellerWithdrawalNotificationEmail, sendSellerWithdrawalStatusUpdateEmail, sendExtendDeliveryRequestEmail, sendExtendDeliveryApprovalEmail, sendExtendDeliveryRejectionEmail } = require('../utils/emailTemplates');
+const {
+    sendBuyerOrderConfirmationEmail,
+    sendSellerOrderNotificationEmail,
+    sendSellerWithdrawalStatusUpdateEmail,
+    sendExtendDeliveryRequestEmail,
+    sendExtendDeliveryApprovalEmail,
+    sendExtendDeliveryRejectionEmail
+} = require('../utils/emailTemplates');
 const stripe = require('stripe')(process.env.STRIPE_SECRET);
-const nodemailer = require('nodemailer');
 const crypto = require('node:crypto');
 const { sendOrderStatusEmail } = require('../utils/sendOrderStatusEmail');
-const { createNotification } = require('./notification.controller');
-const { emitToUser } = require('../server-realtime');
-
-const toDisplayText = (value, fallback = '') =>
-    (typeof value === 'string' || typeof value === 'number') ? String(value) : fallback;
-
-/** Accept only a valid ObjectId string; returns a server-built ObjectId (never raw body values). */
-const toSafeObjectId = (value) => {
-    if (typeof value !== 'string' || !mongoose.Types.ObjectId.isValid(value)) {
-        return undefined;
-    }
-    return new mongoose.Types.ObjectId(value);
-};
+const { notifyAndEmit } = require('../utils/notifyAndEmit');
+const { mailTransporter: transporter } = require('../utils/mailTransporter');
+const { getDashboardCounts: getAdminDashboardCounts } = require('./admin.controller');
+const {
+    WITHDRAWAL_SELLER_POPULATE,
+    toDisplayText,
+    toSafeObjectId,
+    applyCouponDiscount,
+    calculateTaxTotals,
+    buildOrderItemFromGig,
+    formatWithdrawalDetails,
+    assertAdmin,
+    assertWithdrawalAccess,
+    createOrderStatusEntry,
+    findPendingExtendRequest
+} = require('../utils/orderHelpers');
 
 const getOrders = async (request, response) => {
     try {
@@ -31,7 +39,6 @@ const getOrders = async (request, response) => {
             .populate('buyerID', 'username fullname email image country')
             .populate('gigs.sellerID', 'username fullname email image country').sort({ createdAt: -1 });
 
-        // Filter gigs for sellers
         const updatedOrders = orders.map(item => {
             if (item._doc.buyerID?._id.toString() === request.userID) {
                 return item._doc;
@@ -42,17 +49,15 @@ const getOrders = async (request, response) => {
             };
         });
 
-        // Fetch relevant OrderStatus documents
         const orderIDs = updatedOrders.map(order => order._id);
         const orderStatuses = await OrderStatus.find({
             orderID: { $in: orderIDs }
         })
             .populate('buyerID', 'username fullname email image country')
             .populate('sellerID', 'username fullname email image country')
-            .populate('gigID', 'title price') // adjust fields as needed
+            .populate('gigID', 'title price')
             .lean();
 
-        // Group statuses by orderID
         const statusesMap = {};
         orderStatuses.forEach(status => {
             const key = status.orderID.toString();
@@ -60,15 +65,11 @@ const getOrders = async (request, response) => {
             statusesMap[key].push(status);
         });
 
-        // Attach statuses + current status to each order
         const enrichedOrders = updatedOrders.map(order => {
             const statuses = statusesMap[order._id.toString()] || [];
-
-            // sort statuses by createdAt (or updatedAt if that's what you want)
             const sortedStatuses = statuses.sort(
                 (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
             );
-
             const currentStatus = sortedStatuses.length > 0 ? sortedStatuses[sortedStatuses.length - 1] : null;
 
             return {
@@ -79,20 +80,18 @@ const getOrders = async (request, response) => {
         });
 
         return response.send(enrichedOrders);
-    }
-    catch (error) {
+    } catch (error) {
         return response.status(500).send({
             error: true,
             message: error.message
         });
     }
-}
+};
 
 const getOrderDetailsById = async (request, response) => {
     try {
         const { id, gig_id } = request.params;
 
-        // Find order by ID and populate related fields
         const order = await Order.findById(id)
             .populate('buyerID', 'username fullname email image country')
             .populate('gigs.sellerID', 'username fullname email image country isSeller');
@@ -102,8 +101,6 @@ const getOrderDetailsById = async (request, response) => {
         }
 
         const userId = request.userID;
-
-        // Check access: buyer or one of the sellers
         const isBuyer = order.buyerID._id.toString() === userId;
         const isSeller = order.gigs.some(gig => gig.sellerID._id.toString() === userId);
 
@@ -118,7 +115,6 @@ const getOrderDetailsById = async (request, response) => {
             throw CustomException('Gig not found!', 404);
         }
 
-        // Get all relevant order status entries for this order
         const orderStatuses = await OrderStatus.find({
             orderID: order._doc._id,
             deletedAt: null
@@ -128,31 +124,12 @@ const getOrderDetailsById = async (request, response) => {
             deletedAt: null
         }).sort({ createdAt: -1 });
 
-        // Add status to each gig
-        const enrichGigsWithStatus = (gig) => ({
-            ...gig.toObject(),
-        });
-
-        // Filter out gigs not belonging to this seller (if not buyer)
-        if (!isBuyer) {
-            const filteredOrder = {
-                ...order._doc,
-                gig: enrichGigsWithStatus(gig),
-                orderStatuses: orderStatuses,
-                currentStatus: currentStatus
-            };
-            return response.send(filteredOrder);
-        }
-
-        // If buyer, return all gigs enriched
-        const fullOrder = {
+        return response.send({
             ...order._doc,
-            gig: enrichGigsWithStatus(gig),
-            orderStatuses: orderStatuses,
-            currentStatus: currentStatus
-        };
-
-        return response.send(fullOrder);
+            gig: gig.toObject(),
+            orderStatuses,
+            currentStatus
+        });
     } catch (err) {
         return response.status(err.status || 500).send({
             error: true,
@@ -161,7 +138,39 @@ const getOrderDetailsById = async (request, response) => {
     }
 };
 
-const TAX_RATE = 0.045; // 4.5%
+const buildPaymentPayload = ({ orderItems, subtotal, discountAmount, taxAmount, totalWithTax, paymentIntentResult }) => {
+    const payload = {
+        error: false,
+        orderItems,
+        subtotal,
+        taxAmount,
+        totalAmount: totalWithTax,
+        paymentId: paymentIntentResult?.id ?? null,
+        clientSecret: paymentIntentResult?.client_secret ?? null
+    };
+
+    if (discountAmount != null) {
+        payload.discountAmount = discountAmount;
+    }
+
+    if (!paymentIntentResult) {
+        payload.skipPayment = true;
+    }
+
+    return payload;
+};
+
+const createStripePaymentIntent = async (totalWithTax) => {
+    if (totalWithTax === 0) {
+        return null;
+    }
+
+    return stripe.paymentIntents.create({
+        amount: Math.round(totalWithTax * 100),
+        currency: 'USD',
+        automatic_payment_methods: { enabled: true }
+    });
+};
 
 const paymentIntent = async (request, response) => {
     const { _id } = request.params;
@@ -172,71 +181,17 @@ const paymentIntent = async (request, response) => {
             throw CustomException(`Gig with ID ${_id} not found`, 404);
         }
 
-        let subtotal = gig.price;
-        let discountAmount = 0;
+        const { subtotal } = await applyCouponDiscount(gig.price, request.body.couponCode);
+        const { taxAmount, totalWithTax } = calculateTaxTotals(subtotal);
+        const paymentIntentResult = await createStripePaymentIntent(totalWithTax);
 
-        if (request.body.couponCode) {
-            const coupon = await Coupon.findOne({ code: request.body.couponCode.trim().toUpperCase() });
-            if (coupon?.isActive && new Date(coupon?.expiryDate) >= new Date()) {
-                discountAmount = Number.parseFloat(((subtotal * coupon.discountPercent) / 100).toFixed(2));
-                subtotal -= discountAmount;
-            }
-        }
-
-        const taxAmount = Number.parseFloat((subtotal * TAX_RATE).toFixed(2));
-        const totalWithTax = subtotal + taxAmount;
-
-        if (totalWithTax === 0) {
-            return response.send({
-                error: false,
-                orderItems: [{
-                    gigID: gig._id,
-                    image: gig.cover,
-                    title: gig.title,
-                    buyerID: request.userID,
-                    sellerID: gig.userID,
-                    price: gig.price,
-                    deliveryTime: gig.deliveryTime,
-                    quantity: 1,
-                    total: subtotal
-                }],
-                subtotal,
-                taxAmount,
-                totalAmount: totalWithTax,
-                paymentId: null,
-                clientSecret: null,
-                skipPayment: true
-            });
-        }
-
-        const payment_intent = await stripe.paymentIntents.create({
-            amount: Math.round(totalWithTax * 100), // cents
-            currency: "USD",
-            automatic_payment_methods: {
-                enabled: true,
-            },
-        });
-
-        return response.send({
-            error: false,
-            orderItems: [{
-                gigID: gig._id,
-                image: gig.cover,
-                title: gig.title,
-                buyerID: request.userID,
-                sellerID: gig.userID,
-                price: gig.price,
-                deliveryTime: gig.deliveryTime,
-                quantity: 1,
-                total: subtotal
-            }],
+        return response.send(buildPaymentPayload({
+            orderItems: [buildOrderItemFromGig(gig, { buyerID: request.userID, quantity: 1, total: subtotal })],
             subtotal,
             taxAmount,
-            totalAmount: totalWithTax,
-            paymentId: payment_intent.id,
-            clientSecret: payment_intent.client_secret
-        });
-
+            totalWithTax,
+            paymentIntentResult
+        }));
     } catch ({ message, status = 500 }) {
         return response.status(status).send({
             error: true,
@@ -246,15 +201,15 @@ const paymentIntent = async (request, response) => {
 };
 
 const createPayment = async (request, response) => {
-    const { cart } = request.body; // Array of gigs with quantity
+    const { cart } = request.body;
 
     try {
         if (!cart.length) {
-            throw CustomException("Cart is empty!", 400);
+            throw CustomException('Cart is empty!', 400);
         }
 
         let subtotal = 0;
-        let orderItems = [];
+        const orderItems = [];
 
         for (const item of cart) {
             const gig = await Gig.findById(item._id);
@@ -264,64 +219,27 @@ const createPayment = async (request, response) => {
 
             const itemTotal = gig.price * item.quantity;
             subtotal += itemTotal;
-
-            orderItems.push({
-                gigID: gig._id,
-                image: gig.cover,
-                title: gig.title,
+            orderItems.push(buildOrderItemFromGig(gig, {
                 buyerID: request.userID,
-                sellerID: gig.userID,
-                price: gig.price,
-                deliveryTime: gig.deliveryTime,
                 quantity: item.quantity,
                 total: itemTotal
-            });
+            }));
         }
 
-        let discountAmount = 0;
-        if (request.body.couponCode) {
-            const coupon = await Coupon.findOne({ code: request.body.couponCode.trim().toUpperCase() });
-            if (coupon?.isActive && new Date(coupon?.expiryDate) >= new Date()) {
-                discountAmount = Number.parseFloat(((subtotal * coupon.discountPercent) / 100).toFixed(2));
-                subtotal -= discountAmount;
-            }
-        }
+        const discounted = await applyCouponDiscount(subtotal, request.body.couponCode);
+        subtotal = discounted.subtotal;
+        const { discountAmount } = discounted;
+        const { taxAmount, totalWithTax } = calculateTaxTotals(subtotal);
+        const paymentIntentResult = await createStripePaymentIntent(totalWithTax);
 
-        const taxAmount = Number.parseFloat((subtotal * TAX_RATE).toFixed(2));
-        const totalWithTax = subtotal + taxAmount;
-
-        if (totalWithTax === 0) {
-            return response.send({
-                error: false,
-                orderItems,
-                subtotal,
-                discountAmount,
-                taxAmount,
-                totalAmount: totalWithTax,
-                paymentId: null,
-                clientSecret: null,
-                skipPayment: true
-            });
-        }
-
-        // Create a Stripe Payment Intent
-        const paymentIntent = await stripe.paymentIntents.create({
-            amount: Math.round(totalWithTax * 100), // cents
-            currency: "USD",
-            automatic_payment_methods: { enabled: true },
-        });
-
-        return response.send({
-            error: false,
+        return response.send(buildPaymentPayload({
             orderItems,
             subtotal,
             discountAmount,
             taxAmount,
-            totalAmount: totalWithTax,
-            paymentId: paymentIntent.id,
-            clientSecret: paymentIntent.client_secret
-        });
-
+            totalWithTax,
+            paymentIntentResult
+        }));
     } catch ({ message, status = 500 }) {
         return response.status(status).send({
             error: true,
@@ -330,23 +248,13 @@ const createPayment = async (request, response) => {
     }
 };
 
-const transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 465,
-    secure: true,
-    auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS
-    }
-});
-
 const createOrders = async (request, response) => {
     const { orderItems, paymentIntent, totalAmount, couponCode, discountAmount } = request.body;
 
     try {
         let order_payment_intent = null;
         if (paymentIntent || totalAmount === 0) {
-            order_payment_intent = paymentIntent ? paymentIntent.id : "FREE_" + crypto.randomUUID();
+            order_payment_intent = paymentIntent ? paymentIntent.id : 'FREE_' + crypto.randomUUID();
             const order = new Order({
                 buyerID: request.userID,
                 gigs: orderItems,
@@ -359,13 +267,11 @@ const createOrders = async (request, response) => {
 
             await order.save();
 
-            // Fetch buyer info
             const buyer = await User.findById(request.userID);
             const sellerName = await User.findById(orderItems[0].sellerID);
             const buyerName = buyer.username;
             const buyerEmail = buyer.email;
 
-            // Send email to Buyer
             await sendBuyerOrderConfirmationEmail(
                 buyerEmail,
                 buyerName,
@@ -376,7 +282,6 @@ const createOrders = async (request, response) => {
                 transporter
             );
 
-            // Send email to each Seller
             for (const gig of orderItems) {
                 const seller = await User.findById(gig.sellerID);
                 if (seller) {
@@ -390,18 +295,16 @@ const createOrders = async (request, response) => {
                         transporter
                     );
                 }
-                const orderStatus = new OrderStatus({
+
+                await createOrderStatusEntry({
                     buyerID: request.userID,
                     sellerID: gig.sellerID,
-                    status: "In Progress",
+                    status: 'In Progress',
                     orderID: order._id,
                     gigID: gig.gigID
                 });
 
-                await orderStatus.save();
-
-                // Create notifications for seller and buyer
-                const sellerNotification = await createNotification({
+                await notifyAndEmit({
                     userId: gig.sellerID,
                     actorId: request.userID,
                     type: 'order.placed',
@@ -409,18 +312,9 @@ const createOrders = async (request, response) => {
                     body: `${buyerName} ordered ${gig.title}`,
                     metadata: { orderId: order._id, gigId: gig.gigID }
                 });
-                emitToUser(gig.sellerID.toString(), 'notification:new', {
-                    id: sellerNotification._id,
-                    type: sellerNotification.type,
-                    title: sellerNotification.title,
-                    body: sellerNotification.body,
-                    metadata: sellerNotification.metadata,
-                    createdAt: sellerNotification.createdAt
-                });
             }
 
-            // Notify buyer as well
-            const buyerNotification = await createNotification({
+            await notifyAndEmit({
                 userId: request.userID,
                 actorId: request.userID,
                 type: 'order.placed',
@@ -428,22 +322,13 @@ const createOrders = async (request, response) => {
                 body: `Your order ${order._id} has been created`,
                 metadata: { orderId: order._id }
             });
-            emitToUser(request.userID.toString(), 'notification:new', {
-                id: buyerNotification._id,
-                type: buyerNotification.type,
-                title: buyerNotification.title,
-                body: buyerNotification.body,
-                metadata: buyerNotification.metadata,
-                createdAt: buyerNotification.createdAt
-            });
         }
 
         return response.send({
             error: false,
-            message: "Congratulations! Payment got successful.",
+            message: 'Congratulations! Payment got successful.',
             payment_intent: order_payment_intent
         });
-
     } catch ({ message, status = 500 }) {
         return response.status(status).send({
             error: true,
@@ -456,7 +341,6 @@ const updateOrderStatus = async (req, res) => {
     const { buyerID, sellerID, status, orderID, gigID, conversationID } = req.body;
 
     try {
-        // Fetch related gig with buyer and seller populated
         const gigFound = await Gig.findById({ _id: gigID }).populate('userID');
         if (!gigFound) {
             return res.status(404).send({ error: true, message: 'Gig not found.' });
@@ -465,40 +349,27 @@ const updateOrderStatus = async (req, res) => {
         const user = await User.findById(req.userID);
         const buyer = await User.findById(buyerID);
         const seller = await User.findById(sellerID);
-        
+
         if (!buyer || !seller) {
             return res.status(404).send({ error: true, message: 'Buyer or seller not found.' });
         }
 
-        // Update status
-        let orderStatus;
-        if (status === "Revision Requested") {
-            orderStatus = new OrderStatus({
-                buyerID: buyerID,
-                sellerID: sellerID,
-                status: status,
-                orderID: orderID,
-                gigID: gigID
-            });
-            orderStatus.revisionRequestedCount += 1;
-        } else {
-            orderStatus = new OrderStatus({
-                buyerID: buyerID,
-                sellerID: sellerID,
-                status: status,
-                orderID: orderID,
-                gigID: gigID
-            });
-        }
-        await orderStatus.save();
+        await createOrderStatusEntry({
+            buyerID,
+            sellerID,
+            status,
+            orderID,
+            gigID,
+            revisionRequestedCount: status === 'Revision Requested' ? 1 : undefined
+        });
 
-        // Create real-time + stored notification for counterparty
         try {
             const receiverId = req.userID.toString() === buyerID.toString() ? sellerID : buyerID;
             const receiver = await User.findById(receiverId);
             const title = `Order status: ${status}`;
             const body = `${user?.username || 'User'} updated status to "${status}" for ${toDisplayText(gigFound.title)}`;
-            const notif = await createNotification({
+
+            await notifyAndEmit({
                 userId: receiverId,
                 actorId: req.userID,
                 type: `order.status.${status.replace(/\s+/g, '_').toLowerCase()}`,
@@ -506,18 +377,7 @@ const updateOrderStatus = async (req, res) => {
                 body,
                 metadata: { orderId: orderID, gigId: gigID, status, conversationID }
             });
-            
-            // Emit real-time notification to counterparty
-            emitToUser(receiverId.toString(), 'notification:new', {
-                id: notif._id,
-                type: notif.type,
-                title: notif.title,
-                body: notif.body,
-                metadata: notif.metadata,
-                createdAt: notif.createdAt
-            });
 
-            // Send email notification to counterparty
             await sendOrderStatusEmail(
                 user,
                 receiver,
@@ -525,16 +385,14 @@ const updateOrderStatus = async (req, res) => {
                 status,
                 orderID
             );
-
         } catch (error) {
             console.error('Error creating notification:', error);
         }
 
         return res.send({
             error: false,
-            message: "Order status updated successfully."
+            message: 'Order status updated successfully.'
         });
-
     } catch (error) {
         console.error('Error updating order status:', error);
         return res.status(500).send({
@@ -568,8 +426,7 @@ const updatePaymentStatus = async (request, response) => {
         }
 
         throw CustomException('Payment status not updated!', 500);
-    }
-    catch ({ message, status = 500 }) {
+    } catch ({ message, status = 500 }) {
         return response.status(status).send({
             error: true,
             message
@@ -577,7 +434,6 @@ const updatePaymentStatus = async (request, response) => {
     }
 };
 
-// GET /orders/withdrawals
 const getWithdrawals = async (req, res) => {
     try {
         const user = await User.findById(req.userID);
@@ -585,223 +441,118 @@ const getWithdrawals = async (req, res) => {
             return res.status(403).send({ error: true, message: 'Only sellers can view withdrawals.' });
         }
         const withdrawals = await Withdrawal.find({ sellerID: user._id })
-            .populate('sellerID', 'fullname username email image country state postalCode address phone').sort({ createdAt: -1 });
+            .populate('sellerID', WITHDRAWAL_SELLER_POPULATE).sort({ createdAt: -1 });
         return res.send({ error: false, withdrawals });
     } catch (error) {
         return res.status(500).send({ error: true, message: error.message || 'Internal server error.' });
     }
 };
 
-// GET /orders/admin/withdrawals
 const adminGetWithdrawals = async (req, res) => {
     try {
-        const user = await User.findById(req.userID);
-        if (user?.role !== "admin") {
-            return res.status(403).send({
-                error: true,
-                message: "Only admin can view all withdrawals."
-            });
-        }
+        await assertAdmin(req.userID);
 
         const withdrawals = await Withdrawal.find()
-            .populate('sellerID', 'fullname username email image country state postalCode address phone')
+            .populate('sellerID', WITHDRAWAL_SELLER_POPULATE)
             .sort({ createdAt: -1 });
 
         return res.send({ error: false, withdrawals });
     } catch (error) {
-        return res.status(500).send({
-            error: true,
-            message: error.message || "Internal server error."
-        });
-    }
-};
-
-// GET /orders/withdrawals/:id
-const getWithdrawalById = async (req, res) => {
-    try {
-        const { id } = req.params;
-        const userId = req.userID;
-
-        if (!id) {
-            return res.status(400).send({ error: true, message: 'Withdrawal ID is required.' });
-        }
-
-        // Find withdrawal by ID and populate seller details
-        const withdrawal = await Withdrawal.findById(id)
-            .populate('sellerID', 'fullname username email image country fullname address postalCode state phone isSeller createdAt');
-
-        if (!withdrawal) {
-            return res.status(404).send({ error: true, message: 'Withdrawal not found.' });
-        }
-
-        // Check access permissions
-        const user = await User.findById(userId);
-        if (!user) {
-            return res.status(401).send({ error: true, message: 'Unauthorized: user not found.' });
-        }
-
-        const isAdmin = user.role === "admin";
-        const isSeller = user.isSeller && withdrawal.sellerID._id.toString() === userId.toString();
-
-        if (!isAdmin && !isSeller) {
-            return res.status(403).send({ error: true, message: 'Access denied. You can only view your own withdrawals.' });
-        }
-
-        // Return withdrawal with seller details and account details
-        const withdrawalDetails = {
-            ...withdrawal.toObject(),
-            seller: withdrawal.sellerID,
-            accountDetails: {
-                accountHolderName: withdrawal.accountHolderName,
-                routingNumber: withdrawal.routingNumber,
-                accountNumber: withdrawal.accountNumber,
-                accountType: withdrawal.accountType,
-                country: withdrawal.country
-            }
-        };
-
-        return res.send({ error: false, withdrawal: withdrawalDetails });
-    } catch (error) {
-        console.error('Error fetching withdrawal by ID:', error);
-        return res.status(500).send({
+        return res.status(error.status || 500).send({
             error: true,
             message: error.message || 'Internal server error.'
         });
     }
 };
 
-const getAdminDashboardCounts = async (req, res) => {
+const loadWithdrawalForUser = async (id, userId) => {
+    if (!id) {
+        const error = new Error('Withdrawal ID is required.');
+        error.status = 400;
+        throw error;
+    }
+
+    const withdrawal = await Withdrawal.findById(id)
+        .populate('sellerID', WITHDRAWAL_SELLER_POPULATE);
+
+    if (!withdrawal) {
+        const error = new Error('Withdrawal not found.');
+        error.status = 404;
+        throw error;
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+        const error = new Error('Unauthorized: user not found.');
+        error.status = 401;
+        throw error;
+    }
+
+    const access = assertWithdrawalAccess(user, withdrawal);
+    return { withdrawal, user, ...access };
+};
+
+const getWithdrawalById = async (req, res) => {
     try {
-        // Ensure only admin can access
-        const requester = await User.findById(req.userID);
-        if (requester?.role !== 'admin') {
-            return res.status(403).send({ error: true, message: 'Forbidden: admin role required.' });
-        }
-
-        const totalUsers = await User.countDocuments({ deletedAt: null });
-        const totalSellers = await User.countDocuments({ isSeller: true, deletedAt: null });
-        const totalBuyers = totalUsers - totalSellers;
-        const ordersCount = await Order.countDocuments({ deletedAt: null });
-        const activeGigs = await Gig.countDocuments({ deletedAt: null });
-
-        const revenueAgg = await Order.aggregate([
-            { $match: { deletedAt: null, isCompleted: true } },
-            { $group: { _id: null, totalRevenue: { $sum: '$totalAmount' } } }
-        ]);
-        const totalRevenue = revenueAgg.length ? revenueAgg[0].totalRevenue : 0;
-
-        return res.send({ error: false, data: { totalUsers, totalSellers, totalBuyers, ordersCount, activeGigs, totalRevenue } });
+        const { withdrawal } = await loadWithdrawalForUser(req.params.id, req.userID);
+        return res.send({ error: false, withdrawal: formatWithdrawalDetails(withdrawal) });
     } catch (error) {
-        console.error('getDashboardCounts error:', error);
-        return res.status(500).send({ error: true, message: error.message || 'Internal server error.' });
+        console.error('Error fetching withdrawal by ID:', error);
+        return res.status(error.status || 500).send({
+            error: true,
+            message: error.message || 'Internal server error.'
+        });
     }
 };
 
-// GET /orders/withdrawals/:id
 const updateWithdrawalStatus = async (req, res) => {
     try {
-        const { id } = req.params;
-        const userId = req.userID;
-
-        if (!id) {
-            return res.status(400).send({ error: true, message: 'Withdrawal ID is required.' });
-        }
-
-        // Find withdrawal by ID and populate seller details
-        const withdrawal = await Withdrawal.findById(id)
-            .populate('sellerID', 'fullname username email image country fullname address postalCode state phone isSeller createdAt');
-
-        if (!withdrawal) {
-            return res.status(404).send({ error: true, message: 'Withdrawal not found.' });
-        }
-
-        // Store old status before updating
+        const { withdrawal, isAdmin } = await loadWithdrawalForUser(req.params.id, req.userID);
         const oldStatus = withdrawal.status;
 
-        // Check access permissions before updating
-        const user = await User.findById(userId);
-        if (!user) {
-            return res.status(401).send({ error: true, message: 'Unauthorized: user not found.' });
-        }
-
-        const isAdmin = user.role === "admin";
-        const isSeller = user.isSeller && withdrawal.sellerID._id.toString() === userId.toString();
-
-        if (!isAdmin && !isSeller) {
-            return res.status(403).send({ error: true, message: 'Access denied. You can only view your own withdrawals.' });
-        }
-
-        // Update status to completed
-        withdrawal.status = "completed";
+        withdrawal.status = 'completed';
         await withdrawal.save();
 
-        // Send notification & email to seller if admin changed status to completed
-        if (isAdmin && oldStatus !== "completed" && withdrawal.status === "completed") {
+        if (isAdmin && oldStatus !== 'completed' && withdrawal.status === 'completed') {
             try {
-                const sellerNotification = await createNotification({
+                await notifyAndEmit({
                     userId: withdrawal.sellerID._id,
-                    actorId: userId,
+                    actorId: req.userID,
                     type: 'withdrawal.status.completed',
                     title: 'Withdrawal Payment Completed',
                     body: `Your withdrawal request of $${withdrawal.amount || 'N/A'} has been processed and completed.`,
-                    metadata: { 
-                        withdrawalId: withdrawal._id, 
+                    metadata: {
+                        withdrawalId: withdrawal._id,
                         amount: withdrawal.amount,
                         status: withdrawal.status
                     }
                 });
 
-                // Emit real-time notification to seller
-                emitToUser(withdrawal.sellerID._id.toString(), 'notification:new', {
-                    id: sellerNotification._id,
-                    type: sellerNotification.type,
-                    title: sellerNotification.title,
-                    body: sellerNotification.body,
-                    metadata: sellerNotification.metadata,
-                    createdAt: sellerNotification.createdAt
-                });
-
-                // Send email notification to seller about withdrawal completion
                 if (withdrawal.sellerID?.email) {
                     await sendSellerWithdrawalStatusUpdateEmail(
                         withdrawal.sellerID.email,
                         withdrawal.sellerID.fullname || withdrawal.sellerID.username || 'Seller',
                         withdrawal.amount,
-                        'Approved', // Email template expects 'Approved' or 'Rejected'
+                        'Approved',
                         new Date(),
                         transporter
                     );
                 }
             } catch (notifError) {
                 console.error('Error sending withdrawal notification/email:', notifError);
-                // Continue execution even if notification fails
             }
         }
 
-        // Return withdrawal with seller details and account details
-        const withdrawalDetails = {
-            ...withdrawal.toObject(),
-            seller: withdrawal.sellerID,
-            accountDetails: {
-                accountHolderName: withdrawal.accountHolderName,
-                routingNumber: withdrawal.routingNumber,
-                accountNumber: withdrawal.accountNumber,
-                accountType: withdrawal.accountType,
-                country: withdrawal.country
-            }
-        };
-
-        return res.send({ error: false, withdrawal: withdrawalDetails });
+        return res.send({ error: false, withdrawal: formatWithdrawalDetails(withdrawal) });
     } catch (error) {
-        console.error('Error fetching withdrawal by ID:', error);
-        return res.status(500).send({
+        console.error('Error updating withdrawal status:', error);
+        return res.status(error.status || 500).send({
             error: true,
             message: error.message || 'Internal server error.'
         });
     }
 };
 
-// Update getEarningStats to only count available funds as not withdrawn
 const getEarningStats = async (request, response) => {
     try {
         const user = await User.findById(request.userID);
@@ -809,10 +560,8 @@ const getEarningStats = async (request, response) => {
             return response.status(403).send({ error: true, message: 'Only sellers can view earnings stats.' });
         }
 
-        // 1. Find all OrderStatus for this seller
         const orderStatuses = await OrderStatus.find({ sellerID: user._id, deletedAt: null });
 
-        // 2. Group by orderID+gigID to get latest status for each gig in each order
         const latestStatusMap = {};
         orderStatuses.forEach(status => {
             const key = `${status.orderID}_${status.gigID}`;
@@ -829,7 +578,6 @@ const getEarningStats = async (request, response) => {
         const futureStatuses = [];
         const totalEarningStatuses = [];
 
-        // Fetch all relevant orders
         const orderIDs = Array.from(new Set(Object.values(latestStatusMap).map(s => s.orderID)));
         const orders = await Order.find({ _id: { $in: orderIDs } });
         const orderMap = {};
@@ -855,7 +603,6 @@ const getEarningStats = async (request, response) => {
                 orderID: status.orderID
             };
 
-            // Accumulate amounts and group statuses
             if (status.status === 'Completed') {
                 totalEarnings += amount;
                 totalEarningStatuses.push(statusEntry);
@@ -864,13 +611,12 @@ const getEarningStats = async (request, response) => {
                 availableFunds += amount;
                 availableStatuses.push(statusEntry);
             }
-            if (status.status !== "Canceled" && status.status !== "Completed") {
+            if (status.status !== 'Canceled' && status.status !== 'Completed') {
                 futurePayments += amount;
                 futureStatuses.push(statusEntry);
             }
         });
 
-        // Return the response in the requested format
         return response.send([
             { availableFunds, statuses: availableStatuses },
             { futurePayments, statuses: futureStatuses },
@@ -883,9 +629,20 @@ const getEarningStats = async (request, response) => {
         });
     }
 };
-// PATCH /orders/:id/:gigID
-// Buyer can update deliveryDate
-// Seller can only request extension (sets status = "Extend Delivery Date")
+
+const notifyDeliveryDateUpdate = async ({ user, recipient, order, formattedDate }) => {
+    await notifyAndEmit({
+        userId: recipient._id,
+        actorId: user._id,
+        type: 'order.status.delivery_updated',
+        title: 'Order status: Delivery Updated',
+        body: `${user.username || 'Buyer'} updated delivery date to ${formattedDate}`,
+        metadata: { orderId: order._id, deliveryDate: order.deliveryDate }
+    });
+
+    await sendOrderStatusEmail(user, recipient, 'Order Updated', 'Delivery Date Updated', order._id);
+};
+
 const updateOrderDetails = async (req, res) => {
     try {
         const { id, gigID } = req.params;
@@ -903,7 +660,6 @@ const updateOrderDetails = async (req, res) => {
             return res.status(404).send({ error: true, message: 'Order not found.' });
         }
 
-        // ✅ Load current user and check role
         const user = await User.findById(req.userID);
         if (!user) {
             return res.status(401).send({ error: true, message: 'Unauthorized: user not found.' });
@@ -912,7 +668,6 @@ const updateOrderDetails = async (req, res) => {
         const userId = user._id.toString();
         const isBuyer = order.buyerID?._id?.toString() === userId;
 
-        // --- CASE 2: Buyer updates deliveryDate ---
         if (isBuyer && deliveryDate) {
             const parsed = new Date(deliveryDate);
             if (Number.isNaN(parsed.getTime())) {
@@ -923,87 +678,56 @@ const updateOrderDetails = async (req, res) => {
             await order.save();
             const formattedDate = parsed.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 
-            // Notify + Email buyer (optional self-notification)
-            const buyerNotif = await createNotification({
-                userId: order.buyerID._id,
-                actorId: userId,
-                type: `order.status.delivery_updated`,
-                title: `Order status: Delivery Updated`,
-                body: `${user.username || 'Buyer'} updated delivery date to ${formattedDate}`,
-                metadata: { orderId: order._id, deliveryDate: order.deliveryDate }
-            });
-            emitToUser(order.buyerID._id.toString(), 'notification:new', {
-                id: buyerNotif._id,
-                type: buyerNotif.type,
-                title: buyerNotif.title,
-                body: buyerNotif.body,
-                metadata: buyerNotif.metadata,
-                createdAt: buyerNotif.createdAt
+            await notifyDeliveryDateUpdate({
+                user,
+                recipient: order.buyerID,
+                order,
+                formattedDate
             });
 
-            await sendOrderStatusEmail(user, order.buyerID, 'Order Updated', 'Delivery Date Updated', order._id);
-
-            // Notify + Email each seller
             const uniqueSellers = Array.from(new Set(order.gigs.map(g => g.sellerID?._id?.toString()).filter(Boolean)));
             for (const sellerId of uniqueSellers) {
                 const seller = order.gigs.find(g => g?.sellerID?._id?.toString() === sellerId)?.sellerID;
                 if (!seller) continue;
 
-                const sellerNotif = await createNotification({
-                    userId: seller._id,
-                    actorId: userId,
-                    type: `order.status.delivery_updated`,
-                    title: `Order status: Delivery Updated`,
-                    body: `${user.username || 'Buyer'} updated delivery date to ${formattedDate}`,
-                    metadata: { orderId: order._id, deliveryDate: order.deliveryDate }
-                });
-                emitToUser(seller._id.toString(), 'notification:new', {
-                    id: sellerNotif._id,
-                    type: sellerNotif.type,
-                    title: sellerNotif.title,
-                    body: sellerNotif.body,
-                    metadata: sellerNotif.metadata,
-                    createdAt: sellerNotif.createdAt
+                await notifyDeliveryDateUpdate({
+                    user,
+                    recipient: seller,
+                    order,
+                    formattedDate
                 });
 
-                await sendOrderStatusEmail(user, seller, 'Order Updated', 'Delivery Date Updated', order._id);
-                
-                const orderStatus = new OrderStatus({
+                await createOrderStatusEntry({
                     buyerID: req.userID,
                     sellerID: seller._id,
-                    status: "In Progress",
+                    status: 'In Progress',
                     orderID: order._id,
-                    gigID: gigID
+                    gigID
                 });
-
-                await orderStatus.save();
             }
 
             return res.send({ error: false, message: 'Delivery date updated.', order });
         }
 
         return res.status(403).send({ error: true, message: 'Not authorized for this action.' });
-
     } catch (error) {
         console.error('updateOrderDetails error:', error);
         return res.status(500).send({ error: true, message: error.message || 'Internal server error.' });
     }
 };
 
-// Extend Delivery Request - Seller requests extension
 const requestExtendDelivery = async (req, res) => {
     try {
         const { orderId, gigId, conversationID, days, currentDeliveryDate } = req.body;
         const sellerId = req.userID;
 
         if (!orderId || !gigId || !days || !currentDeliveryDate) {
-            return res.status(400).send({ 
-                error: true, 
-                message: 'Order ID, Gig ID, days, and current delivery date are required.' 
+            return res.status(400).send({
+                error: true,
+                message: 'Order ID, Gig ID, days, and current delivery date are required.'
             });
         }
 
-        // Verify the order exists and seller has access
         const order = await Order.findById(orderId)
             .populate('buyerID', 'username email')
             .populate('gigs.sellerID', 'username email');
@@ -1012,8 +736,7 @@ const requestExtendDelivery = async (req, res) => {
             return res.status(404).send({ error: true, message: 'Order not found.' });
         }
 
-        // Check if seller has access to this order
-        const hasAccess = order.gigs.some(gig => 
+        const hasAccess = order.gigs.some(gig =>
             gig.sellerID._id.toString() === sellerId && gig.gigID.toString() === gigId
         );
 
@@ -1021,11 +744,9 @@ const requestExtendDelivery = async (req, res) => {
             return res.status(403).send({ error: true, message: 'Access denied.' });
         }
 
-        // Calculate new delivery date
         const newDeliveryDate = new Date(currentDeliveryDate);
         newDeliveryDate.setDate(newDeliveryDate.getDate() + Number.parseInt(days, 10));
 
-        // Create extend delivery request data
         const extendRequest = {
             orderId,
             gigId,
@@ -1038,48 +759,32 @@ const requestExtendDelivery = async (req, res) => {
             requestedAt: new Date()
         };
 
-        // Create order status with extend request
-        const orderStatus = new OrderStatus({
+        await createOrderStatusEntry({
             buyerID: order.buyerID._id,
             sellerID: sellerId,
-            status: "Extend Delivery Date Requested",
+            status: 'Extend Delivery Date Requested',
             orderID: orderId,
             gigID: gigId,
-            extendRequest: extendRequest
+            extendRequest
         });
 
-        await orderStatus.save();
-
-        // Get seller info
         const seller = await User.findById(sellerId);
         const gig = await Gig.findById(gigId);
 
-        // Create notification for buyer
-        const buyerNotification = await createNotification({
+        await notifyAndEmit({
             userId: order.buyerID._id,
             actorId: sellerId,
             type: 'order.extend_delivery_request',
             title: 'Delivery Extension Request',
             body: `${seller.username} requested to extend delivery by ${days} day${days > 1 ? 's' : ''} for "${toDisplayText(gig?.title)}"`,
-            metadata: { 
-                orderId, 
-                gigId, 
+            metadata: {
+                orderId,
+                gigId,
                 extendRequest,
                 type: 'extend_delivery_request'
             }
         });
 
-        // Emit real-time notification to buyer
-        emitToUser(order.buyerID._id.toString(), 'notification:new', {
-            id: buyerNotification._id,
-            type: buyerNotification.type,
-            title: buyerNotification.title,
-            body: buyerNotification.body,
-            metadata: buyerNotification.metadata,
-            createdAt: buyerNotification.createdAt
-        });
-
-        // Send email to buyer
         await sendExtendDeliveryRequestEmail({
             email: order.buyerID.email,
             buyerName: order.buyerID.username,
@@ -1094,112 +799,92 @@ const requestExtendDelivery = async (req, res) => {
             transporter
         });
 
-        return res.send({ 
-            error: false, 
+        return res.send({
+            error: false,
             message: 'Extend delivery request sent successfully.',
             extendRequest
         });
-
     } catch (error) {
         console.error('Error requesting extend delivery:', error);
-        return res.status(500).send({ 
-            error: true, 
-            message: error.message || 'Internal server error.' 
+        return res.status(500).send({
+            error: true,
+            message: error.message || 'Internal server error.'
         });
     }
 };
 
-// Approve Extend Delivery Request - Buyer approves extension
-const approveExtendDelivery = async (req, res) => {
-    try {
-        const { orderId, gigId, conversationID } = req.body;
-        const buyerId = req.userID;
+const resolveExtendDeliveryDecision = async ({
+    orderId,
+    gigId,
+    conversationID,
+    buyerId,
+    decision
+}) => {
+    const safeOrderId = toSafeObjectId(orderId);
+    const safeGigId = toSafeObjectId(gigId);
 
-        const safeOrderId = toSafeObjectId(orderId);
-        const safeGigId = toSafeObjectId(gigId);
+    if (!safeOrderId || !safeGigId) {
+        const error = new Error('Order ID and Gig ID are required.');
+        error.status = 400;
+        throw error;
+    }
 
-        if (!safeOrderId || !safeGigId) {
-            return res.status(400).send({ 
-                error: true, 
-                message: 'Order ID and Gig ID are required.' 
-            });
-        }
+    const orderStatus = await findPendingExtendRequest(safeOrderId, safeGigId);
 
-        // Find the latest order status with pending extend request
-        const orderStatus = await OrderStatus.findOne({
-            orderID: { $eq: safeOrderId },
-            gigID: { $eq: safeGigId },
-            status: { $eq: 'Extend Delivery Date Requested' },
-            'extendRequest.status': { $eq: 'pending' }
-        }).sort({ createdAt: -1 });
+    if (!orderStatus?.extendRequest) {
+        const error = new Error('No pending extend delivery request found.');
+        error.status = 404;
+        throw error;
+    }
 
-        if (!orderStatus?.extendRequest) {
-            return res.status(404).send({ 
-                error: true, 
-                message: 'No pending extend delivery request found.' 
-            });
-        }
+    if (orderStatus.buyerID.toString() !== buyerId) {
+        const error = new Error('Access denied.');
+        error.status = 403;
+        throw error;
+    }
 
-        // Verify buyer has access
-        if (orderStatus.buyerID.toString() !== buyerId) {
-            return res.status(403).send({ error: true, message: 'Access denied.' });
-        }
+    const extendRequest = orderStatus.extendRequest;
+    const isApproved = decision === 'approved';
+    const resolvedExtendRequest = {
+        ...extendRequest,
+        status: decision,
+        ...(isApproved ? { approvedAt: new Date() } : { rejectedAt: new Date() })
+    };
 
-        const extendRequest = orderStatus.extendRequest;
-        const newDeliveryDate = extendRequest.newDeliveryDate;
-
-        // Update order delivery date
+    if (isApproved) {
         await Order.findByIdAndUpdate(safeOrderId, {
-            deliveryDate: newDeliveryDate
+            deliveryDate: extendRequest.newDeliveryDate
         });
+    }
 
-        // Create new order status with approved extend request
-        const approvedOrderStatus = new OrderStatus({
-            buyerID: buyerId,
-            sellerID: orderStatus.sellerID,
-            status: "In Progress",
-            orderID: safeOrderId,
-            gigID: safeGigId,
-            extendRequest: {
-                ...extendRequest,
-                status: 'approved',
-                approvedAt: new Date()
-            }
-        });
+    const resolvedOrderStatus = await createOrderStatusEntry({
+        buyerID: buyerId,
+        sellerID: orderStatus.sellerID,
+        status: 'In Progress',
+        orderID: safeOrderId,
+        gigID: safeGigId,
+        extendRequest: resolvedExtendRequest
+    });
 
-        await approvedOrderStatus.save();
+    const buyer = await User.findById(buyerId);
+    const seller = await User.findById(orderStatus.sellerID);
+    const gig = await Gig.findById(safeGigId);
 
-        // Get user info
-        const buyer = await User.findById(buyerId);
-        const seller = await User.findById(orderStatus.sellerID);
-        const gig = await Gig.findById(safeGigId);
+    await notifyAndEmit({
+        userId: orderStatus.sellerID,
+        actorId: buyerId,
+        type: isApproved ? 'order.extend_delivery_approved' : 'order.extend_delivery_rejected',
+        title: isApproved ? 'Delivery Extension Approved' : 'Delivery Extension Rejected',
+        body: `${buyer.username} ${isApproved ? 'approved' : 'rejected'} your delivery extension request for "${toDisplayText(gig?.title)}"`,
+        metadata: {
+            orderId: safeOrderId,
+            gigId: safeGigId,
+            extendRequest: resolvedOrderStatus.extendRequest,
+            type: isApproved ? 'extend_delivery_approved' : 'extend_delivery_rejected'
+        }
+    });
 
-        // Create notification for seller
-        const sellerNotification = await createNotification({
-            userId: orderStatus.sellerID,
-            actorId: buyerId,
-            type: 'order.extend_delivery_approved',
-            title: 'Delivery Extension Approved',
-            body: `${buyer.username} approved your delivery extension request for "${toDisplayText(gig?.title)}"`,
-            metadata: { 
-                orderId: safeOrderId, 
-                gigId: safeGigId, 
-                extendRequest: approvedOrderStatus.extendRequest,
-                type: 'extend_delivery_approved'
-            }
-        });
-
-        // Emit real-time notification to seller
-        emitToUser(orderStatus.sellerID.toString(), 'notification:new', {
-            id: sellerNotification._id,
-            type: sellerNotification.type,
-            title: sellerNotification.title,
-            body: sellerNotification.body,
-            metadata: sellerNotification.metadata,
-            createdAt: sellerNotification.createdAt
-        });
-
-        // Send email to seller
+    if (isApproved) {
         await sendExtendDeliveryApprovalEmail({
             email: seller.email,
             sellerName: seller.username,
@@ -1209,110 +894,10 @@ const approveExtendDelivery = async (req, res) => {
             gigId: safeGigId,
             conversationID,
             days: extendRequest.days,
-            newDeliveryDate,
+            newDeliveryDate: extendRequest.newDeliveryDate,
             transporter
         });
-
-        return res.send({ 
-            error: false, 
-            message: 'Delivery extension approved successfully.',
-            newDeliveryDate
-        });
-
-    } catch (error) {
-        console.error('Error approving extend delivery:', error);
-        return res.status(500).send({ 
-            error: true, 
-            message: error.message || 'Internal server error.' 
-        });
-    }
-};
-
-// Reject Extend Delivery Request - Buyer rejects extension
-const rejectExtendDelivery = async (req, res) => {
-    try {
-        const { orderId, gigId, conversationID } = req.body;
-        const buyerId = req.userID;
-
-        const safeOrderId = toSafeObjectId(orderId);
-        const safeGigId = toSafeObjectId(gigId);
-
-        if (!safeOrderId || !safeGigId) {
-            return res.status(400).send({ 
-                error: true, 
-                message: 'Order ID and Gig ID are required.' 
-            });
-        }
-
-        // Find the latest order status with pending extend request
-        const orderStatus = await OrderStatus.findOne({
-            orderID: { $eq: safeOrderId },
-            gigID: { $eq: safeGigId },
-            status: { $eq: 'Extend Delivery Date Requested' },
-            'extendRequest.status': { $eq: 'pending' }
-        }).sort({ createdAt: -1 });
-
-        if (!orderStatus?.extendRequest) {
-            return res.status(404).send({ 
-                error: true, 
-                message: 'No pending extend delivery request found.' 
-            });
-        }
-
-        // Verify buyer has access
-        if (orderStatus.buyerID.toString() !== buyerId) {
-            return res.status(403).send({ error: true, message: 'Access denied.' });
-        }
-
-        const extendRequest = orderStatus.extendRequest;
-
-        // Create new order status with rejected extend request
-        const rejectedOrderStatus = new OrderStatus({
-            buyerID: buyerId,
-            sellerID: orderStatus.sellerID,
-            status: "In Progress",
-            orderID: safeOrderId,
-            gigID: safeGigId,
-            extendRequest: {
-                ...extendRequest,
-                status: 'rejected',
-                rejectedAt: new Date()
-            }
-        });
-
-        await rejectedOrderStatus.save();
-
-        // Get user info
-        const buyer = await User.findById(buyerId);
-        const seller = await User.findById(orderStatus.sellerID);
-        const gig = await Gig.findById(safeGigId);
-
-        // Create notification for seller
-        const sellerNotification = await createNotification({
-            userId: orderStatus.sellerID,
-            actorId: buyerId,
-            type: 'order.extend_delivery_rejected',
-            title: 'Delivery Extension Rejected',
-            body: `${buyer.username} rejected your delivery extension request for "${toDisplayText(gig?.title)}"`,
-            metadata: { 
-                orderId: safeOrderId, 
-                gigId: safeGigId, 
-                extendRequest: rejectedOrderStatus.extendRequest,
-                type: 'extend_delivery_rejected'
-            }
-        });
-
-        // Emit real-time notification to seller
-        emitToUser(orderStatus.sellerID.toString(), 'notification:new', {
-            id: sellerNotification._id,
-            type: sellerNotification.type,
-            title: sellerNotification.title,
-            body: sellerNotification.body,
-            metadata: sellerNotification.metadata,
-            createdAt: sellerNotification.createdAt
-        });
-
-        // Send email to seller
+    } else {
         await sendExtendDeliveryRejectionEmail({
             email: seller.email,
             sellerName: seller.username,
@@ -1325,17 +910,58 @@ const rejectExtendDelivery = async (req, res) => {
             currentDeliveryDate: extendRequest.currentDeliveryDate,
             transporter
         });
+    }
 
-        return res.send({ 
-            error: false, 
-            message: 'Delivery extension rejected successfully.'
+    return {
+        newDeliveryDate: isApproved ? extendRequest.newDeliveryDate : undefined
+    };
+};
+
+const approveExtendDelivery = async (req, res) => {
+    try {
+        const { orderId, gigId, conversationID } = req.body;
+        const result = await resolveExtendDeliveryDecision({
+            orderId,
+            gigId,
+            conversationID,
+            buyerId: req.userID,
+            decision: 'approved'
         });
 
+        return res.send({
+            error: false,
+            message: 'Delivery extension approved successfully.',
+            newDeliveryDate: result.newDeliveryDate
+        });
+    } catch (error) {
+        console.error('Error approving extend delivery:', error);
+        return res.status(error.status || 500).send({
+            error: true,
+            message: error.message || 'Internal server error.'
+        });
+    }
+};
+
+const rejectExtendDelivery = async (req, res) => {
+    try {
+        const { orderId, gigId, conversationID } = req.body;
+        await resolveExtendDeliveryDecision({
+            orderId,
+            gigId,
+            conversationID,
+            buyerId: req.userID,
+            decision: 'rejected'
+        });
+
+        return res.send({
+            error: false,
+            message: 'Delivery extension rejected successfully.'
+        });
     } catch (error) {
         console.error('Error rejecting extend delivery:', error);
-        return res.status(500).send({ 
-            error: true, 
-            message: error.message || 'Internal server error.' 
+        return res.status(error.status || 500).send({
+            error: true,
+            message: error.message || 'Internal server error.'
         });
     }
 };
@@ -1345,5 +971,4 @@ module.exports = {
     updatePaymentStatus, getWithdrawals, getEarningStats, updateOrderDetails,
     requestExtendDelivery, approveExtendDelivery, rejectExtendDelivery, adminGetWithdrawals, getWithdrawalById,
     updateWithdrawalStatus, getAdminDashboardCounts
-}
-
+};
