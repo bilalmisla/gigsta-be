@@ -14,6 +14,19 @@ const transporter = nodemailer.createTransport({
     }
 });
 
+/** Accept only a hex invite token string; never pass raw body/params into queries. */
+const toSafeInviteToken = (value) => {
+    if (typeof value !== 'string') {
+        return undefined;
+    }
+    const token = value.trim();
+    // Tokens are crypto.randomBytes(32).toString('hex') => 64 hex chars
+    if (!/^[a-f0-9]{64}$/i.test(token)) {
+        return undefined;
+    }
+    return token;
+};
+
 // Send invite email to students
 const sendStudentInviteEmail = async (email, invitedByName, inviteToken) => {
     const inviteUrl = `${process.env.FRONTEND_URL}/signup?invite=${inviteToken}`;
@@ -173,8 +186,13 @@ const verifyInviteToken = async (request, response) => {
     const { token } = request.params;
 
     try {
+        const safeToken = toSafeInviteToken(token);
+        if (!safeToken) {
+            throw CustomException('Invalid or expired invitation token.', 400);
+        }
+
         const invite = await StudentInvite.findOne({ 
-            inviteToken: token,
+            inviteToken: safeToken,
             status: 'pending'
         }).populate('invitedBy', 'username email');
 
@@ -214,9 +232,14 @@ const acceptInviteAndRegister = async (request, response) => {
             throw CustomException('Missing required fields.', 400);
         }
 
+        const safeToken = toSafeInviteToken(token);
+        if (!safeToken) {
+            throw CustomException('Invalid or expired invitation token.', 400);
+        }
+
         // Verify invite token
         const invite = await StudentInvite.findOne({ 
-            inviteToken: token,
+            inviteToken: safeToken,
             status: 'pending'
         }).populate('invitedBy');
 
