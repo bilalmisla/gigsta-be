@@ -965,8 +965,8 @@ const sendFinalizeWebhook = async (inquiry) => {
       timestamp: new Date().toISOString(),
     };
 
-    console.log("📤 Sending webhook to:", webhookUrl);
-    console.log("📋 Webhook payload:", JSON.stringify(webhookPayload, null, 2));
+    // console.log("📤 Sending webhook to:", webhookUrl);
+    // console.log("📋 Webhook payload:", JSON.stringify(webhookPayload, null, 2));
 
     const webhookResponse = await fetch(webhookUrl, {
       method: 'POST',

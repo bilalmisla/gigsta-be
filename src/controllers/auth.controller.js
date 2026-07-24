@@ -11,6 +11,18 @@ const { default: axios } = require('axios');
 const companyName = 'Gigsta AI';
 const year = new Date().getFullYear();
 
+const toSafeEmail = (value) => {
+    if (typeof value !== 'string') return undefined;
+    const email = value.trim().toLowerCase().slice(0, 254);
+    if (!email || email.includes(' ')) return undefined;
+    const at = email.indexOf('@');
+    if (at <= 0 || at !== email.lastIndexOf('@')) return undefined;
+    const domain = email.slice(at + 1);
+    const dot = domain.lastIndexOf('.');
+    if (dot <= 0 || dot >= domain.length - 1) return undefined;
+    return email;
+};
+
 const transporter = nodemailer.createTransport({
     host: 'smtp.gmail.com',
     port: 465,
@@ -681,8 +693,16 @@ const authRegister = async (request, response) => {
     const { email, password, image, isSeller, description, fullname } = request.body;
 
     try {
+        const safeEmail = toSafeEmail(email);
+        if (!safeEmail) {
+            return response.status(400).send({
+                error: true,
+                message: 'Invalid email address!'
+            });
+        }
+
         const hash = await bcrypt.hash(password, saltRounds);
-        const existingUser = await User.findOne({ email });
+        const existingUser = await User.findOne({ email: { $eq: safeEmail } });
         if (existingUser) {
             return response.status(400).send({
                 error: true,
@@ -695,7 +715,7 @@ const authRegister = async (request, response) => {
 
         const user = new User({
             username,
-            email,
+            email: safeEmail,
             password: hash,
             image,
             description,
@@ -710,7 +730,7 @@ const authRegister = async (request, response) => {
         const token = jwt.sign({ userId: savedUser._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
 
         // Send verification email
-        await sendVerificationEmail(email, username, token, fullname);
+        await sendVerificationEmail(safeEmail, username, token, fullname);
 
         return response.status(201).send({
             error: false,
@@ -949,7 +969,15 @@ const authResetPassword = async (request, response) => {
     const { email } = request.body;
 
     try {
-        const existingUser = await User.findOne({ email });
+        const safeEmail = toSafeEmail(email);
+        if (!safeEmail) {
+            return response.status(400).send({
+                error: true,
+                message: 'Invalid email address!'
+            });
+        }
+
+        const existingUser = await User.findOne({ email: { $eq: safeEmail } });
         if (!existingUser) {
             return response.status(404).send({
                 error: true,
@@ -961,7 +989,7 @@ const authResetPassword = async (request, response) => {
         const token = jwt.sign({ userId: existingUser._id }, process.env.JWT_SECRET, { expiresIn: '1d' });
 
         // Send verification email
-        await sendResetPasswordEmail(email, existingUser.username, token);
+        await sendResetPasswordEmail(safeEmail, existingUser.username, token);
 
         return response.status(201).send({
             error: false,
@@ -1208,8 +1236,23 @@ const signInWithFacebook = async (req, res) => {
     const { accessToken, userID } = req.body;
 
     try {
-        const facebookVerifyUrl = `https://graph.facebook.com/${userID}?fields=id,name,email,picture&access_token=${accessToken}`;
-        const response = await axios.get(facebookVerifyUrl);
+        if (typeof accessToken !== 'string' || !accessToken.trim()) {
+            throw new Error('Invalid Facebook access token');
+        }
+
+        const safeAccessToken = accessToken.trim().slice(0, 512);
+
+        // Fixed path (/me) — never interpolate user-controlled values into the URL path
+        const response = await axios.get('https://graph.facebook.com/me', {
+            params: {
+                fields: 'id,name,email,picture',
+                access_token: safeAccessToken,
+            },
+        });
+
+        if (typeof userID === 'string' && userID.trim() && response.data?.id !== userID.trim()) {
+            throw new Error('Facebook user ID mismatch.');
+        }
 
         if (!response.data.email) {
             throw new Error("Email permission not granted by user.");

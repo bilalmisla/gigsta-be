@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const { Order, Gig, User, OrderStatus, Withdrawal, Coupon } = require('../models');
 const { CustomException } = require('../utils');
 const { sendBuyerOrderConfirmationEmail, sendSellerOrderNotificationEmail, sendSellerWithdrawalNotificationEmail, sendSellerWithdrawalStatusUpdateEmail, sendExtendDeliveryRequestEmail, sendExtendDeliveryApprovalEmail, sendExtendDeliveryRejectionEmail } = require('../utils/emailTemplates');
@@ -10,6 +11,14 @@ const { emitToUser } = require('../server-realtime');
 
 const toDisplayText = (value, fallback = '') =>
     (typeof value === 'string' || typeof value === 'number') ? String(value) : fallback;
+
+/** Accept only a valid ObjectId string; returns a server-built ObjectId (never raw body values). */
+const toSafeObjectId = (value) => {
+    if (typeof value !== 'string' || !mongoose.Types.ObjectId.isValid(value)) {
+        return undefined;
+    }
+    return new mongoose.Types.ObjectId(value);
+};
 
 const getOrders = async (request, response) => {
     try {
@@ -1106,7 +1115,10 @@ const approveExtendDelivery = async (req, res) => {
         const { orderId, gigId, conversationID } = req.body;
         const buyerId = req.userID;
 
-        if (!orderId || !gigId) {
+        const safeOrderId = toSafeObjectId(orderId);
+        const safeGigId = toSafeObjectId(gigId);
+
+        if (!safeOrderId || !safeGigId) {
             return res.status(400).send({ 
                 error: true, 
                 message: 'Order ID and Gig ID are required.' 
@@ -1115,10 +1127,10 @@ const approveExtendDelivery = async (req, res) => {
 
         // Find the latest order status with pending extend request
         const orderStatus = await OrderStatus.findOne({
-            orderID: orderId,
-            gigID: gigId,
-            status: "Extend Delivery Date Requested",
-            'extendRequest.status': 'pending'
+            orderID: { $eq: safeOrderId },
+            gigID: { $eq: safeGigId },
+            status: { $eq: 'Extend Delivery Date Requested' },
+            'extendRequest.status': { $eq: 'pending' }
         }).sort({ createdAt: -1 });
 
         if (!orderStatus?.extendRequest) {
@@ -1137,7 +1149,7 @@ const approveExtendDelivery = async (req, res) => {
         const newDeliveryDate = extendRequest.newDeliveryDate;
 
         // Update order delivery date
-        await Order.findByIdAndUpdate(orderId, {
+        await Order.findByIdAndUpdate(safeOrderId, {
             deliveryDate: newDeliveryDate
         });
 
@@ -1146,8 +1158,8 @@ const approveExtendDelivery = async (req, res) => {
             buyerID: buyerId,
             sellerID: orderStatus.sellerID,
             status: "In Progress",
-            orderID: orderId,
-            gigID: gigId,
+            orderID: safeOrderId,
+            gigID: safeGigId,
             extendRequest: {
                 ...extendRequest,
                 status: 'approved',
@@ -1160,7 +1172,7 @@ const approveExtendDelivery = async (req, res) => {
         // Get user info
         const buyer = await User.findById(buyerId);
         const seller = await User.findById(orderStatus.sellerID);
-        const gig = await Gig.findById(gigId);
+        const gig = await Gig.findById(safeGigId);
 
         // Create notification for seller
         const sellerNotification = await createNotification({
@@ -1170,8 +1182,8 @@ const approveExtendDelivery = async (req, res) => {
             title: 'Delivery Extension Approved',
             body: `${buyer.username} approved your delivery extension request for "${toDisplayText(gig?.title)}"`,
             metadata: { 
-                orderId, 
-                gigId, 
+                orderId: safeOrderId, 
+                gigId: safeGigId, 
                 extendRequest: approvedOrderStatus.extendRequest,
                 type: 'extend_delivery_approved'
             }
@@ -1193,8 +1205,8 @@ const approveExtendDelivery = async (req, res) => {
             sellerName: seller.username,
             buyerName: buyer.username,
             gigTitle: gig.title,
-            orderId,
-            gigId,
+            orderId: safeOrderId,
+            gigId: safeGigId,
             conversationID,
             days: extendRequest.days,
             newDeliveryDate,
@@ -1222,7 +1234,10 @@ const rejectExtendDelivery = async (req, res) => {
         const { orderId, gigId, conversationID } = req.body;
         const buyerId = req.userID;
 
-        if (!orderId || !gigId) {
+        const safeOrderId = toSafeObjectId(orderId);
+        const safeGigId = toSafeObjectId(gigId);
+
+        if (!safeOrderId || !safeGigId) {
             return res.status(400).send({ 
                 error: true, 
                 message: 'Order ID and Gig ID are required.' 
@@ -1231,10 +1246,10 @@ const rejectExtendDelivery = async (req, res) => {
 
         // Find the latest order status with pending extend request
         const orderStatus = await OrderStatus.findOne({
-            orderID: orderId,
-            gigID: gigId,
-            status: "Extend Delivery Date Requested",
-            'extendRequest.status': 'pending'
+            orderID: { $eq: safeOrderId },
+            gigID: { $eq: safeGigId },
+            status: { $eq: 'Extend Delivery Date Requested' },
+            'extendRequest.status': { $eq: 'pending' }
         }).sort({ createdAt: -1 });
 
         if (!orderStatus?.extendRequest) {
@@ -1256,8 +1271,8 @@ const rejectExtendDelivery = async (req, res) => {
             buyerID: buyerId,
             sellerID: orderStatus.sellerID,
             status: "In Progress",
-            orderID: orderId,
-            gigID: gigId,
+            orderID: safeOrderId,
+            gigID: safeGigId,
             extendRequest: {
                 ...extendRequest,
                 status: 'rejected',
@@ -1270,7 +1285,7 @@ const rejectExtendDelivery = async (req, res) => {
         // Get user info
         const buyer = await User.findById(buyerId);
         const seller = await User.findById(orderStatus.sellerID);
-        const gig = await Gig.findById(gigId);
+        const gig = await Gig.findById(safeGigId);
 
         // Create notification for seller
         const sellerNotification = await createNotification({
@@ -1280,8 +1295,8 @@ const rejectExtendDelivery = async (req, res) => {
             title: 'Delivery Extension Rejected',
             body: `${buyer.username} rejected your delivery extension request for "${toDisplayText(gig?.title)}"`,
             metadata: { 
-                orderId, 
-                gigId, 
+                orderId: safeOrderId, 
+                gigId: safeGigId, 
                 extendRequest: rejectedOrderStatus.extendRequest,
                 type: 'extend_delivery_rejected'
             }
@@ -1303,8 +1318,8 @@ const rejectExtendDelivery = async (req, res) => {
             sellerName: seller.username,
             buyerName: buyer.username,
             gigTitle: gig.title,
-            orderId,
-            gigId,
+            orderId: safeOrderId,
+            gigId: safeGigId,
             conversationID,
             days: extendRequest.days,
             currentDeliveryDate: extendRequest.currentDeliveryDate,
